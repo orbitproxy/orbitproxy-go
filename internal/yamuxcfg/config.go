@@ -16,10 +16,9 @@ func New() *yamux.Config {
 	// Default 10s is too tight on proxy/TUN paths and caused session death
 	// ("keepalive failed: i/o deadline reached") under brief stalls.
 	cfg.ConnectionWriteTimeout = 30 * time.Second
-	// Default 256KiB is too small for typical HTTP asset responses; the sender
-	// fills the window and the stream is closed before WindowUpdates catch up,
-	// producing truncated bodies (ERR_INCOMPLETE_CHUNKED_ENCODING).
-	cfg.MaxStreamWindowSize = 6 * 1024 * 1024
+	// Default 256KiB (and even 6MiB) truncates large HTTP assets when the
+	// stream stalls at the window ceiling; size for multi‑MB Next.js chunks.
+	cfg.MaxStreamWindowSize = 32 * 1024 * 1024
 	// Join teardown can leave late WindowUpdates; those library WARNs are benign.
 	cfg.LogOutput = io.Discard
 	return cfg
