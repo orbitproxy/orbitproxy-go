@@ -17,11 +17,11 @@ import (
 const ClientHelloCanonicalVersion = "orbitproxy-edge-client-hello/v1"
 
 // ClientHelloCanonicalString builds the string that is signed / verified.
-// Identity line is client_key.
-func ClientHelloCanonicalString(clientKey string, timestamp int64, nonce, softVersion string) string {
+// Identity line is machine_key.
+func ClientHelloCanonicalString(machineKey string, timestamp int64, nonce, softVersion string) string {
 	lines := []string{
 		ClientHelloCanonicalVersion,
-		strings.TrimSpace(clientKey),
+		strings.TrimSpace(machineKey),
 		strconv.FormatInt(timestamp, 10),
 		strings.TrimSpace(nonce),
 		strings.TrimSpace(softVersion),
@@ -30,13 +30,13 @@ func ClientHelloCanonicalString(clientKey string, timestamp int64, nonce, softVe
 }
 
 // NewClientHello constructs an unsigned ClientHello with a fresh nonce.
-func NewClientHello(clientKey, softVersion string) (ClientHello, error) {
+func NewClientHello(machineKey, softVersion string) (ClientHello, error) {
 	nonce, err := randomNonce()
 	if err != nil {
 		return ClientHello{}, err
 	}
 	return ClientHello{
-		ClientKey:   strings.TrimSpace(clientKey),
+		MachineKey:   strings.TrimSpace(machineKey),
 		Timestamp:   time.Now().Unix(),
 		Nonce:       nonce,
 		SoftVersion: strings.TrimSpace(softVersion),
@@ -50,7 +50,7 @@ func SignClientHello(privateKeyPEM string, hello ClientHello) (ClientHello, erro
 		return ClientHello{}, err
 	}
 	canonical := ClientHelloCanonicalString(
-		hello.ClientKey,
+		hello.MachineKey,
 		hello.Timestamp,
 		hello.Nonce,
 		hello.SoftVersion,

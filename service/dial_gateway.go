@@ -74,7 +74,7 @@ func (svr *Service) dialGateway(ctx context.Context) (*gateway_ctl.SessionContex
 		}
 	}()
 
-	hello, err := wire.NewClientHello(svr.cfg.ClientKey, svr.cfg.SoftVersion)
+	hello, err := wire.NewClientHello(svr.cfg.MachineKey, svr.cfg.SoftVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +87,7 @@ func (svr *Service) dialGateway(ctx context.Context) (*gateway_ctl.SessionContex
 	}
 
 	svr.logger.Info("edge connected, waiting for server hello",
-		"client_key", svr.cfg.ClientKey,
+		"machine_key", svr.cfg.MachineKey,
 		"edge_addr", svr.cfg.EdgeAddr,
 	)
 
@@ -100,7 +100,7 @@ func (svr *Service) dialGateway(ctx context.Context) (*gateway_ctl.SessionContex
 	return &gateway_ctl.SessionContext{
 		ConnConfig: gateway_ctl.ConnConfig{
 			EdgeAddr:      svr.cfg.EdgeAddr,
-			ClientKey:     svr.cfg.ClientKey,
+			MachineKey:     svr.cfg.MachineKey,
 			PrivateKeyPEM: svr.cfg.PrivateKeyPEM,
 			SoftVersion:   svr.cfg.SoftVersion,
 		},

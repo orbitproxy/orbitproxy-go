@@ -16,8 +16,8 @@ import (
 type RegisterOptions struct {
 	// AuthToken is required: account authtoken.
 	AuthToken string
-	// ClientKey is required: restores the machine mapped by this key.
-	ClientKey string
+	// MachineKey is required: restores the machine mapped by this key.
+	MachineKey string
 	// APIURL is required: control-plane base URL for /v1/machines/register.
 	APIURL string
 
@@ -26,20 +26,20 @@ type RegisterOptions struct {
 	HTTPClient *http.Client
 }
 
-// Register restores via AuthToken + ClientKey and returns Identity for Start.
+// Register restores via AuthToken + MachineKey and returns Identity for Start.
 // It does not dial edge. Create / persist / machine id are CLI concerns.
 func Register(ctx context.Context, opts RegisterOptions) (*Identity, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	authToken := strings.TrimSpace(opts.AuthToken)
-	clientKey := strings.TrimSpace(opts.ClientKey)
+	machineKey := strings.TrimSpace(opts.MachineKey)
 	apiURL := strings.TrimSpace(opts.APIURL)
 	if authToken == "" {
 		return nil, fmt.Errorf("AuthToken is required")
 	}
-	if clientKey == "" {
-		return nil, fmt.Errorf("ClientKey is required")
+	if machineKey == "" {
+		return nil, fmt.Errorf("MachineKey is required")
 	}
 	if apiURL == "" {
 		return nil, fmt.Errorf("APIURL is required")
@@ -62,7 +62,7 @@ func Register(ctx context.Context, opts RegisterOptions) (*Identity, error) {
 	reg, err := controlplane.Register(ctx, controlplane.RegisterOptions{
 		APIURL:     apiURL,
 		AuthToken:  authToken,
-		ClientKey:  clientKey,
+		MachineKey:  machineKey,
 		PublicKey:  pubPEM,
 		Hostname:   hostname,
 		Version:    version,
@@ -73,7 +73,7 @@ func Register(ctx context.Context, opts RegisterOptions) (*Identity, error) {
 	}
 
 	return &Identity{
-		ClientKey:     clientKey,
+		MachineKey:     machineKey,
 		EdgeAddr:      reg.EdgeAddr,
 		MachineCACert: reg.CACert,
 		PrivateKeyPEM: privPEM,

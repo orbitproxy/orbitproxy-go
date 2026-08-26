@@ -10,7 +10,7 @@ import (
 // ConnConfig holds dial/auth parameters for one edge session.
 type ConnConfig struct {
 	EdgeAddr      string
-	ClientKey     string
+	MachineKey     string
 	PrivateKeyPEM string
 	SoftVersion   string
 }

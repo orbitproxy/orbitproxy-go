@@ -18,7 +18,7 @@ func main() {
 
 	id, err := orbitproxy.Register(ctx, orbitproxy.RegisterOptions{
 		AuthToken: os.Getenv("ORBITPROXY_AUTHTOKEN"),
-		ClientKey: os.Getenv("ORBITPROXY_CLIENT_KEY"),
+		MachineKey: os.Getenv("ORBITPROXY_MACHINE_KEY"),
 		APIURL:    os.Getenv("ORBITPROXY_API_URL"),
 	})
 	if err != nil {
@@ -31,7 +31,7 @@ func main() {
 	}
 	defer svc.Close()
 
-	fmt.Printf("started client_key=%s\n", svc.ClientKey())
+	fmt.Printf("started machine_key=%s\n", svc.MachineKey())
 
 	// Listen mode. Forward endpoints need no extra code.
 	ln, err := svc.Listen(ctx)

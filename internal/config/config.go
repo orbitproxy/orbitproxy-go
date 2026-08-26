@@ -5,7 +5,7 @@ import "log/slog"
 // Config is the in-memory runtime config for one SDK client process.
 // Identity fields come from Register (or a loaded Identity); no disk I/O here.
 type Config struct {
-	ClientKey     string
+	MachineKey     string
 	EdgeAddr      string
 	MachineCACert string
 	PrivateKeyPEM string

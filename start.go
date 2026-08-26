@@ -18,6 +18,18 @@ type StartOptions struct {
 	// SoftVersion is sent in ClientHello. Empty defaults to Version()
 	// (SDK module version from build info). CLI should set this via ldflags.
 	SoftVersion string
+
+	// OnConnected is called after each successful edge session establish
+	// (first login and every reconnect). sessionID is from ServerHello.
+	OnConnected func(sessionID string)
+	// OnEndpoints is called whenever the endpoint set changes (add/update/remove).
+	OnEndpoints func(endpoints []service.EndpointStatus)
+	// OnReconnecting is called when the control connection drops and a reconnect
+	// attempt is about to begin. attempt is 1-based for the current outage.
+	OnReconnecting func(attempt int, reason string)
+	// OnDisconnected is called when the service stops reconnecting.
+	// permanent is true for edge Disconnect (e.g. machine_deleted).
+	OnDisconnected func(reason string, permanent bool)
 }
 
 // Start dials edge with Identity and returns a running *service.Service.
@@ -27,12 +39,12 @@ func Start(ctx context.Context, id Identity, opts StartOptions) (*service.Servic
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	clientKey := strings.TrimSpace(id.ClientKey)
+	machineKey := strings.TrimSpace(id.MachineKey)
 	edgeAddr := strings.TrimSpace(id.EdgeAddr)
 	machineCACert := strings.TrimSpace(id.MachineCACert)
 	privPEM := strings.TrimSpace(id.PrivateKeyPEM)
-	if clientKey == "" {
-		return nil, fmt.Errorf("Identity.ClientKey is required")
+	if machineKey == "" {
+		return nil, fmt.Errorf("Identity.MachineKey is required")
 	}
 	if edgeAddr == "" {
 		return nil, fmt.Errorf("Identity.EdgeAddr is required")
@@ -54,7 +66,7 @@ func Start(ctx context.Context, id Identity, opts StartOptions) (*service.Servic
 	}
 
 	svc, err := service.New(config.Config{
-		ClientKey:     clientKey,
+		MachineKey:     machineKey,
 		EdgeAddr:      edgeAddr,
 		MachineCACert: machineCACert,
 		PrivateKeyPEM: privPEM,
@@ -64,6 +76,12 @@ func Start(ctx context.Context, id Identity, opts StartOptions) (*service.Servic
 	if err != nil {
 		return nil, err
 	}
+	svc.SetHooks(service.Hooks{
+		OnConnected:    opts.OnConnected,
+		OnEndpoints:    opts.OnEndpoints,
+		OnReconnecting: opts.OnReconnecting,
+		OnDisconnected: opts.OnDisconnected,
+	})
 	if err := svc.Start(ctx); err != nil {
 		_ = svc.Close()
 		return nil, err

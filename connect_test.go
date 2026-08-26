@@ -116,7 +116,7 @@ func (m *mockEdge) handleConn(conn net.Conn) {
 	}
 
 	canonical := wire.ClientHelloCanonicalString(
-		hello.ClientKey, hello.Timestamp, hello.Nonce, hello.SoftVersion,
+		hello.MachineKey, hello.Timestamp, hello.Nonce, hello.SoftVersion,
 	)
 	if err := wire.VerifyClientHelloSignature(m.publicKeyPEM, hello.AuthSignature, canonical); err != nil {
 		_ = wire.WriteMsg(control, wire.Disconnect{Reason: "auth_failed", ReasonText: err.Error()})
@@ -158,15 +158,15 @@ func startRegisterServer(t *testing.T, edgeAddr string, capturePub *string) *htt
 		}
 		var body struct {
 			AuthToken string `json:"authtoken"`
-			ClientKey string `json:"clientKey"`
+			MachineKey string `json:"machineKey"`
 			PublicKey string `json:"publicKey"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), 400)
 			return
 		}
-		if body.AuthToken == "" || body.ClientKey == "" {
-			http.Error(w, "authtoken and clientKey required", 400)
+		if body.AuthToken == "" || body.MachineKey == "" {
+			http.Error(w, "authtoken and machineKey required", 400)
 			return
 		}
 		if capturePub != nil {
@@ -184,7 +184,7 @@ func startRegisterServer(t *testing.T, edgeAddr string, capturePub *string) *htt
 func testConnectOpts(api *httptest.Server) orbitproxy.Options {
 	return orbitproxy.Options{
 		AuthToken:  "tok_test",
-		ClientKey:  "ck_test",
+		MachineKey:  "ck_test",
 		APIURL:     api.URL,
 		HTTPClient: api.Client(),
 	}
@@ -274,7 +274,7 @@ func TestConnectSuccessEndpointsAndClose(t *testing.T) {
 				hello := msg.(*wire.ClientHello)
 				pub := <-pubCh
 				canonical := wire.ClientHelloCanonicalString(
-					hello.ClientKey, hello.Timestamp, hello.Nonce, hello.SoftVersion,
+					hello.MachineKey, hello.Timestamp, hello.Nonce, hello.SoftVersion,
 				)
 				if err := wire.VerifyClientHelloSignature(pub, hello.AuthSignature, canonical); err != nil {
 					_ = wire.WriteMsg(control, wire.Disconnect{Reason: "auth_failed"})
@@ -318,8 +318,8 @@ func TestConnectSuccessEndpointsAndClose(t *testing.T) {
 		t.Fatal("edge did not accept session")
 	}
 
-	if svc.ClientKey() != "ck_test" {
-		t.Fatalf("ClientKey = %q", svc.ClientKey())
+	if svc.MachineKey() != "ck_test" {
+		t.Fatalf("MachineKey = %q", svc.MachineKey())
 	}
 	// Endpoints come from edge NewEndpoint, not register.
 	if len(svc.Endpoints()) != 0 {
@@ -386,7 +386,7 @@ func TestConnectWorkConnForward(t *testing.T) {
 		hello := msg.(*wire.ClientHello)
 		pub := <-pubCh
 		canonical := wire.ClientHelloCanonicalString(
-			hello.ClientKey, hello.Timestamp, hello.Nonce, hello.SoftVersion,
+			hello.MachineKey, hello.Timestamp, hello.Nonce, hello.SoftVersion,
 		)
 		if err := wire.VerifyClientHelloSignature(pub, hello.AuthSignature, canonical); err != nil {
 			t.Errorf("verify: %v", err)
@@ -505,7 +505,7 @@ func TestConnectListenMode(t *testing.T) {
 		hello := msg.(*wire.ClientHello)
 		pub := <-pubCh
 		canonical := wire.ClientHelloCanonicalString(
-			hello.ClientKey, hello.Timestamp, hello.Nonce, hello.SoftVersion,
+			hello.MachineKey, hello.Timestamp, hello.Nonce, hello.SoftVersion,
 		)
 		if err := wire.VerifyClientHelloSignature(pub, hello.AuthSignature, canonical); err != nil {
 			t.Errorf("verify: %v", err)
@@ -649,7 +649,7 @@ func TestRegisterAndStart(t *testing.T) {
 		hello := msg.(*wire.ClientHello)
 		pub := <-pubCh
 		canonical := wire.ClientHelloCanonicalString(
-			hello.ClientKey, hello.Timestamp, hello.Nonce, hello.SoftVersion,
+			hello.MachineKey, hello.Timestamp, hello.Nonce, hello.SoftVersion,
 		)
 		if err := wire.VerifyClientHelloSignature(pub, hello.AuthSignature, canonical); err != nil {
 			t.Errorf("verify: %v", err)
@@ -662,12 +662,12 @@ func TestRegisterAndStart(t *testing.T) {
 
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			ClientKey string `json:"clientKey"`
+			MachineKey string `json:"machineKey"`
 			PublicKey string `json:"publicKey"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		if body.ClientKey != "ck_test" {
-			t.Errorf("clientKey = %q", body.ClientKey)
+		if body.MachineKey != "ck_test" {
+			t.Errorf("machineKey = %q", body.MachineKey)
 		}
 		pubCh <- body.PublicKey
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -684,14 +684,14 @@ func TestRegisterAndStart(t *testing.T) {
 
 	id, err := orbitproxy.Register(ctx, orbitproxy.RegisterOptions{
 		AuthToken:  "tok_test",
-		ClientKey:  "ck_test",
+		MachineKey:  "ck_test",
 		APIURL:     api.URL,
 		HTTPClient: api.Client(),
 	})
 	if err != nil {
 		t.Fatalf("Register: %v", err)
 	}
-	if id.ClientKey != "ck_test" || id.EdgeAddr == "" || id.PrivateKeyPEM == "" {
+	if id.MachineKey != "ck_test" || id.EdgeAddr == "" || id.PrivateKeyPEM == "" {
 		t.Fatalf("identity = %+v", id)
 	}
 
@@ -706,8 +706,8 @@ func TestRegisterAndStart(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("edge did not accept session")
 	}
-	if svc.ClientKey() != "ck_test" {
-		t.Fatalf("ClientKey = %q", svc.ClientKey())
+	if svc.MachineKey() != "ck_test" {
+		t.Fatalf("MachineKey = %q", svc.MachineKey())
 	}
 }
 
@@ -726,7 +726,7 @@ func TestStartWithCLIIdentity(t *testing.T) {
 
 	// CLI path: own register already done; Start with assembled Identity.
 	svc, err := orbitproxy.Start(ctx, orbitproxy.Identity{
-		ClientKey:     "ck_cli",
+		MachineKey:     "ck_cli",
 		EdgeAddr:      edge.Addr(),
 		MachineCACert: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",
 		PrivateKeyPEM: priv,
@@ -735,8 +735,8 @@ func TestStartWithCLIIdentity(t *testing.T) {
 		t.Fatalf("Start: %v", err)
 	}
 	defer svc.Close()
-	if svc.ClientKey() != "ck_cli" {
-		t.Fatalf("ClientKey = %q", svc.ClientKey())
+	if svc.MachineKey() != "ck_cli" {
+		t.Fatalf("MachineKey = %q", svc.MachineKey())
 	}
 }
 
@@ -793,7 +793,7 @@ func TestConnectDiscoverToolsOnNewEndpoint(t *testing.T) {
 		hello := msg.(*wire.ClientHello)
 		pub := <-pubCh
 		canonical := wire.ClientHelloCanonicalString(
-			hello.ClientKey, hello.Timestamp, hello.Nonce, hello.SoftVersion,
+			hello.MachineKey, hello.Timestamp, hello.Nonce, hello.SoftVersion,
 		)
 		if err := wire.VerifyClientHelloSignature(pub, hello.AuthSignature, canonical); err != nil {
 			t.Errorf("verify: %v", err)
@@ -904,7 +904,7 @@ func TestConnectDiscoverToolsStandalone(t *testing.T) {
 		hello := msg.(*wire.ClientHello)
 		pub := <-pubCh
 		canonical := wire.ClientHelloCanonicalString(
-			hello.ClientKey, hello.Timestamp, hello.Nonce, hello.SoftVersion,
+			hello.MachineKey, hello.Timestamp, hello.Nonce, hello.SoftVersion,
 		)
 		if err := wire.VerifyClientHelloSignature(pub, hello.AuthSignature, canonical); err != nil {
 			t.Errorf("verify: %v", err)

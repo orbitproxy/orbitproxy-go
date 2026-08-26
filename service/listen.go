@@ -47,7 +47,7 @@ func (svr *Service) Listen(ctx context.Context, opts ...ListenOption) (net.Liste
 					ln, err := mgr.ClaimListener(wantID)
 					if err == nil {
 						svr.logger.Info("in-process endpoint claimed",
-							"client_key", svr.cfg.ClientKey,
+							"machine_key", svr.cfg.MachineKey,
 							"endpoint_id", wantID,
 						)
 						return ln, nil
@@ -63,7 +63,7 @@ func (svr *Service) Listen(ctx context.Context, opts ...ListenOption) (net.Liste
 				ln, err := mgr.ClaimListener(id)
 				if err == nil {
 					svr.logger.Info("in-process endpoint claimed",
-						"client_key", svr.cfg.ClientKey,
+						"machine_key", svr.cfg.MachineKey,
 						"endpoint_id", id,
 					)
 					return ln, nil

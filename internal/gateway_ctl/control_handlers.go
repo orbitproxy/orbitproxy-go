@@ -35,7 +35,7 @@ func (ctl *Control) handleServerHello(m wire.Message) error {
 	}
 	ctl.session.SetSession(hello.EdgeID, hello.SessionID)
 	ctl.logger.Info("edge session established",
-		"client_key", ctl.sessionCtx.ConnConfig.ClientKey,
+		"machine_key", ctl.sessionCtx.ConnConfig.MachineKey,
 		"edge_id", hello.EdgeID,
 		"session_id", hello.SessionID,
 	)
@@ -183,7 +183,7 @@ func (ctl *Control) handleDisconnect(m wire.Message) error {
 	}
 	ctl.markPermanentDisconnect(reason)
 	ctl.logger.Warn("edge requested permanent disconnect",
-		"client_key", ctl.sessionCtx.ConnConfig.ClientKey,
+		"machine_key", ctl.sessionCtx.ConnConfig.MachineKey,
 		"reason", in.Reason,
 		"reason_text", in.ReasonText,
 	)
@@ -197,7 +197,7 @@ func (ctl *Control) handleReqWorkConn(m wire.Message) {
 	sessionID := ctl.session.SessionID()
 	if sessionID == "" {
 		ctl.logger.Warn("req_work_conn before server hello, ignoring",
-			"client_key", ctl.sessionCtx.ConnConfig.ClientKey,
+			"machine_key", ctl.sessionCtx.ConnConfig.MachineKey,
 		)
 		return
 	}
@@ -205,7 +205,7 @@ func (ctl *Control) handleReqWorkConn(m wire.Message) {
 	yamuxSession := ctl.sessionCtx.Yamux
 	if yamuxSession == nil {
 		ctl.logger.Warn("yamux session unavailable",
-			"client_key", ctl.sessionCtx.ConnConfig.ClientKey,
+			"machine_key", ctl.sessionCtx.ConnConfig.MachineKey,
 		)
 		return
 	}
@@ -213,7 +213,7 @@ func (ctl *Control) handleReqWorkConn(m wire.Message) {
 	stream, err := yamuxSession.Open()
 	if err != nil {
 		ctl.logger.Warn("open yamux work stream failed",
-			"client_key", ctl.sessionCtx.ConnConfig.ClientKey,
+			"machine_key", ctl.sessionCtx.ConnConfig.MachineKey,
 			"err", err,
 		)
 		return
@@ -225,7 +225,7 @@ func (ctl *Control) handleReqWorkConn(m wire.Message) {
 	if err := wire.WriteMsg(stream, newWork); err != nil {
 		_ = stream.Close()
 		ctl.logger.Warn("send new_work_conn failed",
-			"client_key", ctl.sessionCtx.ConnConfig.ClientKey,
+			"machine_key", ctl.sessionCtx.ConnConfig.MachineKey,
 			"err", err,
 		)
 		return
@@ -235,7 +235,7 @@ func (ctl *Control) handleReqWorkConn(m wire.Message) {
 	if err != nil {
 		_ = stream.Close()
 		ctl.logger.Debug("read start_work_conn failed",
-			"client_key", ctl.sessionCtx.ConnConfig.ClientKey,
+			"machine_key", ctl.sessionCtx.ConnConfig.MachineKey,
 			"err", err,
 		)
 		return
@@ -244,7 +244,7 @@ func (ctl *Control) handleReqWorkConn(m wire.Message) {
 	if !ok {
 		_ = stream.Close()
 		ctl.logger.Debug("work stream first message is not start_work_conn",
-			"client_key", ctl.sessionCtx.ConnConfig.ClientKey,
+			"machine_key", ctl.sessionCtx.ConnConfig.MachineKey,
 			"type", string(in.MsgType()),
 		)
 		return
@@ -260,7 +260,7 @@ func (ctl *Control) wrapHandler(handler func(wire.Message) error) func(wire.Mess
 	return func(m wire.Message) {
 		if err := handler(m); err != nil {
 			ctl.logger.Warn("handle edge msg failed, skipping",
-				"client_key", ctl.sessionCtx.ConnConfig.ClientKey,
+				"machine_key", ctl.sessionCtx.ConnConfig.MachineKey,
 				"type", string(m.MsgType()),
 				"err", err,
 			)

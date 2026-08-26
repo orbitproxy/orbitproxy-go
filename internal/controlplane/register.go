@@ -16,17 +16,17 @@ import (
 const publicKeyAlgorithm = "ed25519"
 
 // RegisterResult is the successful machine restore response.
-// Only edge addr is returned; identity ClientKey is the caller's input.
+// Only edge addr is returned; identity MachineKey is the caller's input.
 type RegisterResult struct {
 	EdgeAddr string
 	CACert   string
 }
 
 // RegisterRequest is the POST /v1/machines/register JSON body.
-// SDK always sends ClientKey (restore). CLI has its own register client.
+// SDK always sends MachineKey (restore). CLI has its own register client.
 type RegisterRequest struct {
 	AuthToken          string `json:"authtoken"`
-	ClientKey          string `json:"clientKey"`
+	MachineKey          string `json:"machineKey"`
 	Hostname           string `json:"hostname,omitempty"`
 	PublicKeyAlgorithm string `json:"publicKeyAlgorithm"`
 	PublicKey          string `json:"publicKey"`
@@ -55,14 +55,14 @@ type apiEnvelope struct {
 type RegisterOptions struct {
 	APIURL     string
 	AuthToken  string
-	ClientKey  string
+	MachineKey  string
 	PublicKey  string
 	Hostname   string
 	Version    string
 	HTTPClient *http.Client
 }
 
-// Register restores the machine mapped by ClientKey using
+// Register restores the machine mapped by MachineKey using
 // /v1/machines/register. Response only needs edge.addr.
 func Register(ctx context.Context, opts RegisterOptions) (*RegisterResult, error) {
 	apiURL := strings.TrimSpace(opts.APIURL)
@@ -73,9 +73,9 @@ func Register(ctx context.Context, opts RegisterOptions) (*RegisterResult, error
 	if authToken == "" {
 		return nil, fmt.Errorf("AuthToken is required")
 	}
-	clientKey := strings.TrimSpace(opts.ClientKey)
-	if clientKey == "" {
-		return nil, fmt.Errorf("ClientKey is required")
+	machineKey := strings.TrimSpace(opts.MachineKey)
+	if machineKey == "" {
+		return nil, fmt.Errorf("MachineKey is required")
 	}
 	publicKey := strings.TrimSpace(opts.PublicKey)
 	if publicKey == "" {
@@ -90,7 +90,7 @@ func Register(ctx context.Context, opts RegisterOptions) (*RegisterResult, error
 
 	body := RegisterRequest{
 		AuthToken:          authToken,
-		ClientKey:          clientKey,
+		MachineKey:          machineKey,
 		Hostname:           strings.TrimSpace(opts.Hostname),
 		PublicKeyAlgorithm: publicKeyAlgorithm,
 		PublicKey:          publicKey,

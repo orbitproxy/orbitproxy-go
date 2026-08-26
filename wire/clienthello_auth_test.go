@@ -28,7 +28,7 @@ func TestSignAndVerifyClientHello(t *testing.T) {
 	}
 
 	canonical := wire.ClientHelloCanonicalString(
-		signed.ClientKey, signed.Timestamp, signed.Nonce, signed.SoftVersion,
+		signed.MachineKey, signed.Timestamp, signed.Nonce, signed.SoftVersion,
 	)
 	if err := wire.VerifyClientHelloSignature(pub, signed.AuthSignature, canonical); err != nil {
 		t.Fatalf("VerifyClientHelloSignature: %v", err)
