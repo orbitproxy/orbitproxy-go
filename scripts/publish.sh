@@ -20,17 +20,14 @@ cd "$ROOT"
 git add -u
 git add -A -- . ':!*.exe'
 
-if ! git diff --cached --name-only | grep -qvE '^VERSION$'; then
-  echo "error: only VERSION is staged; uncommitted SDK source is missing" >&2
-  git reset -q HEAD -- VERSION || true
+if git diff --cached --quiet; then
+  echo "error: nothing to commit" >&2
   exit 1
 fi
 
-if ! git diff --cached --name-only | grep -qx 'appdir/appdir.go'; then
-  if [[ -f appdir/appdir.go ]] && ! git cat-file -e "HEAD:appdir/appdir.go" 2>/dev/null; then
-    echo "error: appdir is not staged; refuse empty SDK tag" >&2
-    exit 1
-  fi
+if ! git cat-file -e "HEAD:appdir/appdir.go" 2>/dev/null && ! git diff --cached --name-only | grep -qx 'appdir/appdir.go'; then
+  echo "error: appdir is not in HEAD or this commit; refuse empty SDK tag" >&2
+  exit 1
 fi
 
 if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
