@@ -88,6 +88,11 @@ func Register(ctx context.Context, opts RegisterOptions) (*RegisterResult, error
 	}
 	endpoint := base.JoinPath("/v1/machines/register")
 
+	version := strings.TrimSpace(opts.Version)
+	if version == "" {
+		return nil, fmt.Errorf("version is required")
+	}
+
 	body := RegisterRequest{
 		AuthToken:          authToken,
 		MachineKey:          machineKey,
@@ -96,7 +101,7 @@ func Register(ctx context.Context, opts RegisterOptions) (*RegisterResult, error
 		PublicKey:          publicKey,
 		OS:                 runtime.GOOS,
 		Arch:               runtime.GOARCH,
-		Version:            strings.TrimSpace(opts.Version),
+		Version:            version,
 	}
 	payload, err := json.Marshal(body)
 	if err != nil {

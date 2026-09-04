@@ -36,7 +36,7 @@ func NewClientHello(machineKey, softVersion string) (ClientHello, error) {
 		return ClientHello{}, err
 	}
 	return ClientHello{
-		MachineKey:   strings.TrimSpace(machineKey),
+		MachineKey:  strings.TrimSpace(machineKey),
 		Timestamp:   time.Now().Unix(),
 		Nonce:       nonce,
 		SoftVersion: strings.TrimSpace(softVersion),

@@ -10,6 +10,9 @@ type Config struct {
 	MachineCACert string
 	PrivateKeyPEM string
 	SoftVersion   string
+	// DataRoot is the client --workdir (default ~/.orbitproxy).
+	// Env files live under <DataRoot>/<machineKey>/env/.
+	DataRoot string
 
 	Logger *slog.Logger
 }

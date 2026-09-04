@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/orbitproxy/orbitproxy-go/internal/backoff"
 	"github.com/orbitproxy/orbitproxy-go/internal/gateway_ctl"
 	"github.com/orbitproxy/orbitproxy-go/internal/yamuxcfg"
 	"github.com/orbitproxy/orbitproxy-go/wire"
@@ -103,6 +104,7 @@ func (svr *Service) dialGateway(ctx context.Context) (*gateway_ctl.SessionContex
 			MachineKey:     svr.cfg.MachineKey,
 			PrivateKeyPEM: svr.cfg.PrivateKeyPEM,
 			SoftVersion:   svr.cfg.SoftVersion,
+			DataRoot:      svr.cfg.DataRoot,
 		},
 		Yamux:         yamuxSession,
 		ControlStream: controlStream,
@@ -153,7 +155,7 @@ func waitServerHello(ctx context.Context, controlStream net.Conn) (*wire.ServerH
 			if reason == "" {
 				reason = "edge disconnected"
 			}
-			return nil, fmt.Errorf("edge rejected session: %s", reason)
+			return nil, backoff.Permanent(fmt.Errorf("edge rejected session: %s", reason))
 		default:
 			return nil, fmt.Errorf("unexpected first control message %T", res.msg)
 		}

@@ -26,23 +26,6 @@ func putJoinBuf(buf []byte) {
 	joinBufPool.Put(&buf)
 }
 
-// WorkConnWrapOptions configures optional work-conn transforms.
-type WorkConnWrapOptions struct {
-	EncryptionKey  []byte
-	UseEncryption  bool
-	UseCompression bool
-	Limiter        any
-}
-
-// WrapWorkConn currently returns the connection unchanged.
-func WrapWorkConn(conn io.ReadWriteCloser, opt WorkConnWrapOptions) (io.ReadWriteCloser, func(), error) {
-	if conn == nil {
-		return nil, func() {}, nil
-	}
-	_ = opt
-	return conn, func() {}, nil
-}
-
 type closeWriter interface {
 	CloseWrite() error
 }

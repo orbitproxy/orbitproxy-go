@@ -22,7 +22,7 @@ type RegisterOptions struct {
 	APIURL string
 
 	Hostname   string // optional; defaults to os.Hostname()
-	Version    string // optional; defaults to Version() (SDK module version)
+	Version    string // semver; empty falls back to Version() and still must be semver
 	HTTPClient *http.Client
 }
 
@@ -57,6 +57,9 @@ func Register(ctx context.Context, opts RegisterOptions) (*Identity, error) {
 	version := strings.TrimSpace(opts.Version)
 	if version == "" {
 		version = Version()
+	}
+	if !isClientSemver(version) {
+		return nil, fmt.Errorf("version must be semver, got %q; pass RegisterOptions.Version or depend on a tagged module", version)
 	}
 
 	reg, err := controlplane.Register(ctx, controlplane.RegisterOptions{

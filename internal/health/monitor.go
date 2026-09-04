@@ -2,33 +2,38 @@ package health
 
 import (
 	"context"
-	"net"
 	"time"
 )
 
-// Monitor performs periodic TCP dial health checks.
+// Monitor runs optional ActiveProbe checks on an interval.
+// Passive observations are applied by the endpoint Runtime via MarkUnhealthy /
+// MarkHealthy — they do not need a Monitor, but when a Monitor exists it shares
+// the same health callbacks.
 type Monitor struct {
 	interval       time.Duration
 	timeout        time.Duration
 	maxFailedTimes int
-	addr           string
+	probe          Probe
 
-	failedTimes    uint64
-	statusOK       bool
-	statusNormalFn func()
-	statusFailedFn func()
+	failedTimes uint64
+	statusOK    bool
+
+	// Called when active probe transitions to healthy / unhealthy.
+	onHealthy   func()
+	onUnhealthy func(obs Observation)
 
 	ctx    context.Context
 	cancel context.CancelFunc
 }
 
-// NewMonitor creates a TCP health monitor.
+// NewMonitor creates a probe-based health monitor.
+// probe must be non-nil.
 func NewMonitor(
 	ctx context.Context,
 	intervalSec, timeoutSec, maxFailed int,
-	addr string,
-	statusNormalFn func(),
-	statusFailedFn func(),
+	probe Probe,
+	onHealthy func(),
+	onUnhealthy func(obs Observation),
 ) *Monitor {
 	if intervalSec <= 0 {
 		intervalSec = 10
@@ -45,10 +50,10 @@ func NewMonitor(
 		interval:       time.Duration(intervalSec) * time.Second,
 		timeout:        time.Duration(timeoutSec) * time.Second,
 		maxFailedTimes: maxFailed,
-		addr:           addr,
+		probe:          probe,
 		statusOK:       false,
-		statusNormalFn: statusNormalFn,
-		statusFailedFn: statusFailedFn,
+		onHealthy:      onHealthy,
+		onUnhealthy:    onUnhealthy,
 		ctx:            newctx,
 		cancel:         cancel,
 	}
@@ -67,7 +72,7 @@ func (monitor *Monitor) Stop() {
 func (monitor *Monitor) checkWorker() {
 	for {
 		doCtx, cancel := context.WithDeadline(monitor.ctx, time.Now().Add(monitor.timeout))
-		err := monitor.doTCPCheck(doCtx)
+		err := monitor.probe.Check(doCtx)
 
 		select {
 		case <-monitor.ctx.Done():
@@ -78,16 +83,26 @@ func (monitor *Monitor) checkWorker() {
 		}
 
 		if err == nil {
-			if !monitor.statusOK && monitor.statusNormalFn != nil {
+			if !monitor.statusOK && monitor.onHealthy != nil {
 				monitor.statusOK = true
 				monitor.failedTimes = 0
-				monitor.statusNormalFn()
+				monitor.onHealthy()
 			}
 		} else {
 			monitor.failedTimes++
-			if monitor.statusOK && int(monitor.failedTimes) >= monitor.maxFailedTimes && monitor.statusFailedFn != nil {
+			if monitor.statusOK && int(monitor.failedTimes) >= monitor.maxFailedTimes && monitor.onUnhealthy != nil {
 				monitor.statusOK = false
-				monitor.statusFailedFn()
+				probeName := "probe"
+				if monitor.probe != nil {
+					probeName = monitor.probe.Name()
+				}
+				monitor.onUnhealthy(Observation{
+					Healthy:    false,
+					Code:       "probe_failed",
+					Message:    err.Error(),
+					Source:     probeName,
+					ObservedAt: time.Now(),
+				})
 			}
 		}
 
@@ -97,17 +112,4 @@ func (monitor *Monitor) checkWorker() {
 		case <-time.After(monitor.interval):
 		}
 	}
-}
-
-func (monitor *Monitor) doTCPCheck(ctx context.Context) error {
-	if monitor.addr == "" {
-		return nil
-	}
-	var d net.Dialer
-	conn, err := d.DialContext(ctx, "tcp", monitor.addr)
-	if err != nil {
-		return err
-	}
-	_ = conn.Close()
-	return nil
 }

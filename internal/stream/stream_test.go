@@ -53,20 +53,3 @@ func TestJoinCopiesBothDirectionsAndReturnsCounts(t *testing.T) {
 		t.Fatalf("in=%d out=%d, want sum %d", inCount, outCount, 2*len(payload))
 	}
 }
-
-func TestWrapWorkConnPassthrough(t *testing.T) {
-	t.Parallel()
-
-	a, b := net.Pipe()
-	defer a.Close()
-	defer b.Close()
-
-	wrapped, recycle, err := WrapWorkConn(a, WorkConnWrapOptions{})
-	if err != nil {
-		t.Fatalf("WrapWorkConn error: %v", err)
-	}
-	defer recycle()
-	if wrapped != a {
-		t.Fatalf("expected passthrough wrapper when options disabled")
-	}
-}

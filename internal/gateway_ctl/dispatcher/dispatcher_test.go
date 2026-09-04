@@ -27,7 +27,7 @@ func TestDispatcherSendReceive(t *testing.T) {
 	})
 	d.Run()
 
-	if err := d.Send(wire.ReqWorkConn{}); err != nil {
+	if err := d.Send(wire.CloseEndpoint{}); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 
@@ -78,7 +78,7 @@ func TestDispatcherSendAfterClose(t *testing.T) {
 
 	deadline := time.Now().Add(time.Second)
 	for {
-		err := d.Send(wire.ReqWorkConn{})
+		err := d.Send(wire.CloseEndpoint{})
 		if err == io.EOF {
 			return
 		}

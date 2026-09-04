@@ -9,6 +9,7 @@ import (
 	"log/slog"
 
 	"github.com/orbitproxy/orbitproxy-go/internal/health"
+	"github.com/orbitproxy/orbitproxy-go/internal/mcp/mcpstdio"
 	"github.com/orbitproxy/orbitproxy-go/internal/sdklog"
 	"github.com/orbitproxy/orbitproxy-go/wire"
 )
@@ -22,6 +23,7 @@ type Runtime struct {
 	listener   *chanListener
 	monitor    *health.Monitor
 	sendHealth func(*wire.EndpointHealth) error
+	bridge     *mcpstdio.Bridge // exec 模式的桥接层，由外部注入
 }
 
 // NewRuntime creates a runtime and optionally starts health monitoring.
@@ -33,6 +35,13 @@ func NewRuntime(ctx context.Context, cfg *Config, sendHealth func(*wire.Endpoint
 	}
 	rt.restartMonitorLocked()
 	return rt
+}
+
+// SetBridge 注入 exec 模式的桥接层。
+func (rt *Runtime) SetBridge(b *mcpstdio.Bridge) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rt.bridge = b
 }
 
 // Config returns the current endpoint config snapshot.
@@ -95,23 +104,59 @@ func (rt *Runtime) Close() {
 	}
 }
 
-// ReportUnhealthy pushes an unhealthy EndpointHealth if enabled.
+// ReportUnhealthy is a convenience wrapper for dial/passive failures with only a reason string.
 func (rt *Runtime) ReportUnhealthy(reason string) {
+	rt.MarkUnhealthy(health.Unhealthy("dial_failed", reason, "dial"))
+}
+
+// MarkUnhealthy applies a health observation (active probe or passive event) and reports EndpointHealth.
+// Exec MCP process death and forward dial failures both land here — one health model.
+func (rt *Runtime) MarkUnhealthy(obs health.Observation) {
+	obs.Healthy = false
+	if obs.ObservedAt.IsZero() {
+		obs.ObservedAt = time.Now()
+	}
+	rt.reportHealth(obs)
+}
+
+// MarkHealthy reports the endpoint as healthy.
+func (rt *Runtime) MarkHealthy(source string) {
+	rt.reportHealth(health.HealthyObs(source))
+}
+
+func (rt *Runtime) reportHealth(obs health.Observation) {
 	rt.mu.RLock()
 	cfg := rt.cfg
 	sendHealth := rt.sendHealth
 	rt.mu.RUnlock()
 
-	if cfg == nil || !cfg.HealthEnabled || sendHealth == nil {
+	if cfg == nil || sendHealth == nil {
 		return
 	}
-	_ = sendHealth(&wire.EndpointHealth{
+	// Active probe / dial updates respect HealthEnabled.
+	// Passive process observations always report unhealthy: for exec MCP that
+	// IS the health strategy (no ActiveProbe), even when the UI toggle is off.
+	switch obs.Source {
+	case "probe", "dial":
+		if !cfg.HealthEnabled {
+			return
+		}
+	default:
+		if obs.Healthy && !cfg.HealthEnabled {
+			return
+		}
+	}
+	msg := &wire.EndpointHealth{
 		EndpointID: cfg.EndpointID,
 		ProxyID:    cfg.ProxyID,
-		Healthy:    false,
-		Reason:     reason,
-		Ts:         time.Now().Unix(),
-	})
+		Healthy:    obs.Healthy,
+		Ts:         obs.ObservedAt.Unix(),
+	}
+	if !obs.Healthy {
+		msg.Reason = obs.ReasonText()
+		msg.ErrorCode = obs.Code
+	}
+	_ = sendHealth(msg)
 }
 
 func (rt *Runtime) restartMonitorLocked() {
@@ -119,44 +164,49 @@ func (rt *Runtime) restartMonitorLocked() {
 	if rt.cfg == nil || !rt.cfg.HealthEnabled || rt.ctx == nil {
 		return
 	}
-	if rt.cfg.Delivery == DeliveryInProcess || rt.cfg.LocalAddr == "" {
+
+	// in_process 模式不做外部健康检查
+	if rt.cfg.Delivery == DeliveryInProcess {
+		return
+	}
+
+	// Active probe is optional. Exec MCP often has nil probe and relies on
+	// passive MarkUnhealthy from process observation.
+	probe := rt.selectProbeLocked()
+	if probe == nil {
 		return
 	}
 
 	cfg := rt.cfg
-	sendHealth := rt.sendHealth
-	localAddr := cfg.LocalAddr
 	rt.monitor = health.NewMonitor(
 		rt.ctx,
 		cfg.HealthIntervalSeconds,
 		cfg.HealthTimeoutSeconds,
 		cfg.HealthMaxFailed,
-		localAddr,
+		probe,
 		func() {
-			if sendHealth == nil {
-				return
-			}
-			_ = sendHealth(&wire.EndpointHealth{
-				EndpointID: cfg.EndpointID,
-				ProxyID:    cfg.ProxyID,
-				Healthy:    true,
-				Ts:         time.Now().Unix(),
-			})
+			rt.MarkHealthy("probe")
 		},
-		func() {
-			if sendHealth == nil {
-				return
-			}
-			_ = sendHealth(&wire.EndpointHealth{
-				EndpointID: cfg.EndpointID,
-				ProxyID:    cfg.ProxyID,
-				Healthy:    false,
-				Reason:     "health check failed",
-				Ts:         time.Now().Unix(),
-			})
+		func(obs health.Observation) {
+			rt.MarkUnhealthy(obs)
 		},
 	)
 	rt.monitor.Start()
+}
+
+// selectProbeLocked picks an active health probe for this delivery mode.
+// Caller holds rt.mu write lock. Nil means passive-only health.
+func (rt *Runtime) selectProbeLocked() health.Probe {
+	switch rt.cfg.Delivery {
+	case DeliveryExec:
+		// exec/stdio：被动监听子进程即可，不强制 ActiveProbe。
+		return nil
+	default:
+		if rt.cfg.LocalAddr == "" {
+			return nil
+		}
+		return &health.TCPProbe{Addr: rt.cfg.LocalAddr}
+	}
 }
 
 func (rt *Runtime) stopMonitorLocked() {
@@ -209,6 +259,22 @@ func (rt *Runtime) InWorkConn(logger *slog.Logger, stream net.Conn, start *wire.
 			return false
 		}
 		return true
+	}
+
+	// exec 模式：通过 bridge 桥接到 stdio MCP server 子进程
+	if cfg.Delivery == DeliveryExec {
+		rt.mu.RLock()
+		bridge := rt.bridge
+		rt.mu.RUnlock()
+		if bridge == nil {
+			logger.Warn("exec bridge not initialized, dropping work conn",
+				"proxy_id", start.ProxyID,
+				"endpoint_id", start.EndpointID,
+			)
+			return false
+		}
+		bridge.HandleWorkConn(stream, cfg.EndpointID)
+		return false
 	}
 
 	TCPJoinHandler{}.InWorkConn(logger, stream, start, rt)

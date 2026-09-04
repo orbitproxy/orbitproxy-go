@@ -1,18 +1,6 @@
 package wire
 
-// ReqWorkConn asks the client to open a new yamux work stream.
-type ReqWorkConn struct{}
-
-func (ReqWorkConn) MsgType() MessageType { return MessageTypeReqWorkConn }
-
-// NewWorkConn is sent on a freshly opened work stream.
-type NewWorkConn struct {
-	SessionID string `json:"session_id"`
-}
-
-func (NewWorkConn) MsgType() MessageType { return MessageTypeNewWorkConn }
-
-// StartWorkConn tells the client which endpoint to dial locally.
+// StartWorkConn 由 Edge 在新开的 yamux work stream 上发送，告知 Machine 要路由到哪个 endpoint。
 type StartWorkConn struct {
 	ProxyID      string `json:"proxy_id"`
 	EndpointID   string `json:"endpoint_id"`

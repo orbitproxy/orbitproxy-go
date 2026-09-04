@@ -2,7 +2,7 @@ package wire
 
 // ClientHello is the first control message from machine/SDK to edge.
 type ClientHello struct {
-	MachineKey     string `json:"machine_key"`
+	MachineKey    string `json:"machine_key"`
 	SoftVersion   string `json:"soft_version"`
 	Timestamp     int64  `json:"timestamp"`
 	Nonce         string `json:"nonce"`

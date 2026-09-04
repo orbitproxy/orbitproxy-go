@@ -7,7 +7,9 @@ import (
 
 	"log/slog"
 
+	"github.com/orbitproxy/orbitproxy-go/appdir"
 	"github.com/orbitproxy/orbitproxy-go/internal/endpoint"
+	"github.com/orbitproxy/orbitproxy-go/internal/mcp/mcpstdio"
 	"github.com/orbitproxy/orbitproxy-go/internal/gateway_ctl/dispatcher"
 	"github.com/orbitproxy/orbitproxy-go/internal/sdklog"
 	"github.com/orbitproxy/orbitproxy-go/wire"
@@ -63,7 +65,9 @@ func (ctl *Control) worker() {
 	ctl.endpointMgr.SetSendHealth(func(h *wire.EndpointHealth) error {
 		return ctl.msgDispatcher.Send(*h)
 	})
+	ctl.initExecBridge()
 	ctl.registerMsgHandlers()
+	go ctl.acceptWorkStreams(ctl.ctx)
 	go ctl.msgDispatcher.Run()
 
 	<-ctl.msgDispatcher.Done()
@@ -71,6 +75,35 @@ func (ctl *Control) worker() {
 		ctl.logger.Debug("control message dispatcher exited")
 	}
 	ctl.closeSession()
+}
+
+func (ctl *Control) initExecBridge() {
+	ctl.endpointMgr.SetExecDiagCallback(ctl.reportEndpointDiagnostic)
+	poolCfg := mcpstdio.DefaultPoolConfig()
+	poolCfg.Logger = ctl.logger
+	if ctl.sessionCtx != nil && ctl.sessionCtx.ConnConfig.MachineKey != "" {
+		root := ctl.sessionCtx.ConnConfig.DataRoot
+		if pidFile, err := appdir.ExecPIDFile(root, ctl.sessionCtx.ConnConfig.MachineKey); err == nil {
+			poolCfg.PIDFile = pidFile
+		} else {
+			ctl.logger.Warn("resolve exec pid file failed", "err", err)
+		}
+		if dir, err := appdir.MachineDir(root, ctl.sessionCtx.ConnConfig.MachineKey); err == nil {
+			poolCfg.MachineDir = dir
+		}
+	}
+	ctl.endpointMgr.EnsureExecBridge(poolCfg, ctl.logger)
+}
+
+func (ctl *Control) machineDir() string {
+	if ctl.sessionCtx == nil || ctl.sessionCtx.ConnConfig.MachineKey == "" {
+		return ""
+	}
+	dir, err := appdir.MachineDir(ctl.sessionCtx.ConnConfig.DataRoot, ctl.sessionCtx.ConnConfig.MachineKey)
+	if err != nil {
+		return ""
+	}
+	return dir
 }
 
 // Done is closed when the control session ends.

@@ -4,9 +4,11 @@ import (
 	"context"
 	"net"
 	"sync"
+	"sync/atomic"
 
 	"log/slog"
 
+	"github.com/orbitproxy/orbitproxy-go/internal/mcp/mcpstdio"
 	"github.com/orbitproxy/orbitproxy-go/internal/sdklog"
 	"github.com/orbitproxy/orbitproxy-go/wire"
 )
@@ -18,6 +20,12 @@ type Manager struct {
 	ctx        context.Context
 	sendHealth func(*wire.EndpointHealth) error
 	notify     chan struct{}
+
+	execOnce     sync.Once
+	pool         *mcpstdio.Pool
+	bridge       *mcpstdio.Bridge
+	execLogger   *slog.Logger
+	diagCallback atomic.Value // mcpstdio.DiagnosticCallback
 }
 
 // NewManager creates an empty manager.
@@ -58,11 +66,15 @@ func (m *Manager) upsert(cfg *Config) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	var rt *Runtime
 	if existing, ok := m.byID[cfg.EndpointID]; ok {
 		existing.Update(m.ctx, cfg, m.sendHealth)
-		return
+		rt = existing
+	} else {
+		rt = NewRuntime(m.ctx, cfg, m.sendHealth)
+		m.byID[cfg.EndpointID] = rt
 	}
-	m.byID[cfg.EndpointID] = NewRuntime(m.ctx, cfg, m.sendHealth)
+	m.syncExecLocked(rt, cfg)
 }
 
 func (m *Manager) delete(endpointID string) {
@@ -71,7 +83,11 @@ func (m *Manager) delete(endpointID string) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.pool != nil {
+		m.pool.UnregisterEndpoint(endpointID)
+	}
 	if rt, ok := m.byID[endpointID]; ok {
+		rt.SetBridge(nil)
 		rt.Close()
 		delete(m.byID, endpointID)
 	}

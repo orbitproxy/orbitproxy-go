@@ -2,7 +2,6 @@ package wire_test
 
 import (
 	"bytes"
-	"encoding/binary"
 	"encoding/json"
 	"testing"
 
@@ -14,7 +13,7 @@ func TestMsgWireRoundTrip(t *testing.T) {
 
 	var buf bytes.Buffer
 	original := wire.ClientHello{
-		ClientKey:   "ck_test",
+		MachineKey:  "ck_test",
 		SoftVersion: "1.0.0",
 		Timestamp:   1748245678,
 		Nonce:       "nonce-1",
@@ -34,20 +33,50 @@ func TestMsgWireRoundTrip(t *testing.T) {
 	if !ok {
 		t.Fatalf("decoded type = %T, want *wire.ClientHello", decoded)
 	}
-	if hello.ClientKey != "ck_test" {
-		t.Fatalf("ClientKey = %q", hello.ClientKey)
+	if hello.MachineKey != "ck_test" {
+		t.Fatalf("MachineKey = %q", hello.MachineKey)
 	}
 }
 
-func TestEmptyMessageWireSize(t *testing.T) {
+func TestDisconnectWireSize(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	if err := wire.WriteMsg(&buf, wire.ReqWorkConn{}); err != nil {
+	if err := wire.WriteMsg(&buf, wire.Disconnect{}); err != nil {
 		t.Fatalf("WriteMsg: %v", err)
 	}
-	if buf.Len() != 1+8+2 {
-		t.Fatalf("encoded len = %d, want 11", buf.Len())
+	// 1 字节 type + 8 字节 length + JSON payload {"reason":""}(13 字节)
+	if buf.Len() != 1+8+13 {
+		t.Fatalf("encoded len = %d, want 22", buf.Len())
+	}
+}
+
+func TestLifecycleWireRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	original := wire.Update{
+		RequestID:   "mer_1",
+		DownloadURL: "https://example.com/orbitproxy.tar.gz",
+		Artifact:    "machine-linux-amd64",
+	}
+	if err := wire.WriteMsg(&buf, original); err != nil {
+		t.Fatalf("WriteMsg: %v", err)
+	}
+	if buf.Bytes()[0] != wire.TypeUpdate {
+		t.Fatalf("type byte = %q, want %q", buf.Bytes()[0], wire.TypeUpdate)
+	}
+
+	decoded, err := wire.ReadMsg(&buf)
+	if err != nil {
+		t.Fatalf("ReadMsg: %v", err)
+	}
+	got, ok := decoded.(*wire.Update)
+	if !ok {
+		t.Fatalf("decoded type = %T, want *wire.Update", decoded)
+	}
+	if got.RequestID != original.RequestID || got.DownloadURL != original.DownloadURL {
+		t.Fatalf("decoded %+v", got)
 	}
 }
 
@@ -60,6 +89,7 @@ func TestNewEndpointRoundTrip(t *testing.T) {
 		ProxyID:             "px-1",
 		ProxyType:           "basic",
 		Protocol:            "https",
+		PubHost:             "app.example.com",
 		LocalServicePayload: json.RawMessage(`{"localAddr":"127.0.0.1:8080"}`),
 	}
 	if err := wire.WriteMsg(&buf, original); err != nil {
@@ -70,7 +100,7 @@ func TestNewEndpointRoundTrip(t *testing.T) {
 		t.Fatalf("ReadMsg: %v", err)
 	}
 	got, ok := decoded.(*wire.NewEndpoint)
-	if !ok || got.EndpointID != "ep-1" {
+	if !ok || got.EndpointID != "ep-1" || got.PubHost != "app.example.com" {
 		t.Fatalf("decoded = %+v, ok=%v", decoded, ok)
 	}
 }
@@ -130,21 +160,5 @@ func TestDiscoverToolsRoundTrip(t *testing.T) {
 	epGot := epDecoded.(*wire.NewEndpoint)
 	if epGot.DiscoverTools == nil || epGot.DiscoverTools.RequestID != "mer_2" {
 		t.Fatalf("DiscoverTools = %+v", epGot.DiscoverTools)
-	}
-}
-
-func TestReqWorkConnLengthPrefix(t *testing.T) {
-	t.Parallel()
-
-	var buf bytes.Buffer
-	if err := wire.WriteMsg(&buf, wire.ReqWorkConn{}); err != nil {
-		t.Fatalf("WriteMsg: %v", err)
-	}
-	var length int64
-	if err := binary.Read(bytes.NewReader(buf.Bytes()[1:9]), binary.BigEndian, &length); err != nil {
-		t.Fatalf("read length: %v", err)
-	}
-	if length != 2 {
-		t.Fatalf("payload length = %d, want 2", length)
 	}
 }

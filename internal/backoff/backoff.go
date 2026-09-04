@@ -41,6 +41,9 @@ func Loop(
 		if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return err
 		}
+		if IsPermanent(err) {
+			return err
+		}
 
 		wait := policy.NextBackOff()
 		if onError != nil {
@@ -53,6 +56,33 @@ func Loop(
 		case <-time.After(wait):
 		}
 	}
+}
+
+type permanentError struct {
+	err error
+}
+
+func (err permanentError) Error() string {
+	if err.err == nil {
+		return "permanent"
+	}
+	return err.err.Error()
+}
+
+func (err permanentError) Unwrap() error {
+	return err.err
+}
+
+func Permanent(err error) error {
+	if err == nil {
+		return nil
+	}
+	return permanentError{err: err}
+}
+
+func IsPermanent(err error) bool {
+	var permanent permanentError
+	return errors.As(err, &permanent)
 }
 
 // Reset resets the exponential policy.

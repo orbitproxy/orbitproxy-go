@@ -31,9 +31,10 @@ id, err := orbitproxy.Register(ctx, orbitproxy.RegisterOptions{
 })
 
 svc, err := orbitproxy.Start(ctx, *id, orbitproxy.StartOptions{
-    Logger: slog.Default(), // optional; nil discards
-    // Optional lifecycle hooks (used by orbitproxy-sidecar):
-    // OnConnected, OnEndpoints, OnReconnecting, OnDisconnected
+    // Logger zero value → default dual-channel (stderr Info+, file Debug+).
+    // Logger: LoggerOptions{Dir: "/data/op", MaxSizeMB: 200, ...}
+    // Logger: LoggerOptions{Slog: DiscardLogger()} or ORBITPROXY_LOG_DISABLED=1
+    // Optional lifecycle hooks: OnConnected, OnEndpoints, ...
 })
 defer svc.Close()
 ```
@@ -62,11 +63,11 @@ http.Serve(ln, mux)
 - SDK `Register`: restore only; requires `AuthToken` + `MachineKey` + `APIURL`. Response needs `edge.addr`. Returns `Identity` for `Start` (MachineKey from input, EdgeAddr from CP, generated private key).
 - `Start(Identity)`: shared runtime entry. No register call. CLI builds `Identity` from its own register/config (`machine_key` + keys + `edge_addr`).
 - `Connect` = SDK `Register` + `Start`.
-- `Version()` reads this module's version from Go build info (`go.mod` / tagged deps). ClientHello `soft_version` and register `version` default to it; CLI should override via `StartOptions.SoftVersion` / `RegisterOptions.Version` (ldflags).
+- `Version()` returns a semver: ldflags injection, then tagged module build info, then `ReleaseVersion` from the `VERSION` file (`go:embed`). It never returns `dev` / `devel`. Bump with `scripts/bump-version.sh 0.1.4`, then `git tag v0.1.4`. Register / ClientHello use this unless the caller passes `RegisterOptions.Version` / `StartOptions.SoftVersion`.
 - Edge login uses ClientHello `machine_key`.
 - Discover: `DiscoverTools` (`D`) / `DiscoverToolsResult` (`F`) with `request_id`. Create-sync attaches `NewEndpoint.discover_tools`; manual rediscover sends a standalone `DiscoverTools`.
 - Discover may rewrite HTTP `Host` to `localhost:port` for Playwright local MCP; data-plane Host rewrite belongs on Edge (`host_rewrite`).
-- `Logger` is `*log/slog.Logger`; nil discards all messages.
+- Logging is nested under `Logger LoggerOptions`. Zero value enables defaults: stderr (Info+) + file (Debug+) at `~/.orbitproxy/<machineKey>/logs/orbitproxy.log` (lumberjack: 100MB / 7 days / 14 backups). Set `Logger.Dir` / `ORBITPROXY_LOG_DIR` and rotation fields / `ORBITPROXY_LOG_MAX_*` to override. `Logger.Slog` non-nil replaces defaults entirely; `DiscardLogger()` or `ORBITPROXY_LOG_DISABLED=1` silences defaults.
 - Edge control conn is always TCP→TLS→yamux.
 - `HTTPClient`: optional; used only for control-plane register. Never used for edge traffic.
 

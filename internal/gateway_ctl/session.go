@@ -10,9 +10,10 @@ import (
 // ConnConfig holds dial/auth parameters for one edge session.
 type ConnConfig struct {
 	EdgeAddr      string
-	MachineKey     string
+	MachineKey    string
 	PrivateKeyPEM string
 	SoftVersion   string
+	DataRoot      string
 }
 
 // SessionContext is one edge control connection.
@@ -36,14 +37,12 @@ func (session *SessionContext) Close() {
 
 type sessionState struct {
 	mu        sync.RWMutex
-	edgeID    string
 	sessionID string
 }
 
-func (state *sessionState) SetSession(edgeID, sessionID string) {
+func (state *sessionState) SetSession(sessionID string) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
-	state.edgeID = edgeID
 	state.sessionID = sessionID
 }
 
@@ -51,10 +50,4 @@ func (state *sessionState) SessionID() string {
 	state.mu.RLock()
 	defer state.mu.RUnlock()
 	return state.sessionID
-}
-
-func (state *sessionState) EdgeID() string {
-	state.mu.RLock()
-	defer state.mu.RUnlock()
-	return state.edgeID
 }

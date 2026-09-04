@@ -1,20 +1,22 @@
 package service
 
 import (
-	"strings"
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
-	"log/slog"
-
-	"github.com/orbitproxy/orbitproxy-go/internal/endpoint"
 	"github.com/orbitproxy/orbitproxy-go/internal/backoff"
 	"github.com/orbitproxy/orbitproxy-go/internal/config"
+	"github.com/orbitproxy/orbitproxy-go/internal/endpoint"
 	"github.com/orbitproxy/orbitproxy-go/internal/gateway_ctl"
+	"github.com/orbitproxy/orbitproxy-go/internal/proclife"
 	"github.com/orbitproxy/orbitproxy-go/internal/sdklog"
+	"github.com/orbitproxy/orbitproxy-go/internal/userenv"
 )
 
 const (
@@ -30,12 +32,22 @@ const (
 
 // EndpointStatus is a snapshot of an edge-pushed endpoint.
 type EndpointStatus struct {
-	EndpointID string
-	ProxyID    string
-	Type       string
-	Protocol   string
-	Delivery   string
-	LocalAddr  string
+	EndpointID    string
+	ProxyID       string
+	Type          string
+	Protocol      string
+	PubHost       string
+	Delivery      string
+	LocalAddr     string
+	HealthEnabled bool
+}
+
+// Hooks are optional lifecycle callbacks. Nil fields are skipped.
+type Hooks struct {
+	OnConnected    func(sessionID string)
+	OnEndpoints    func(endpoints []EndpointStatus)
+	OnReconnecting func(attempt int, reason string)
+	OnDisconnected func(reason string, permanent bool)
 }
 
 // Service is the SDK runtime for one virtual machine connected to edge.
@@ -43,6 +55,7 @@ type EndpointStatus struct {
 type Service struct {
 	cfg    config.Config
 	logger *slog.Logger
+	hooks  Hooks
 
 	mu  sync.RWMutex
 	ctl *gateway_ctl.Control
@@ -54,12 +67,15 @@ type Service struct {
 	once   sync.Once
 	errMu  sync.Mutex
 	err    error
+
+	watchOnce sync.Once
+	logCloser io.Closer
 }
 
 // New builds a Service. Call Run (or Start) after identity fields are filled.
 func New(cfg config.Config) (*Service, error) {
-	if cfg.ClientKey == "" {
-		return nil, fmt.Errorf("client_key is required")
+	if cfg.MachineKey == "" {
+		return nil, fmt.Errorf("machine_key is required")
 	}
 	if cfg.EdgeAddr == "" {
 		return nil, fmt.Errorf("edge_addr is required")
@@ -81,6 +97,16 @@ func New(cfg config.Config) (*Service, error) {
 	}, nil
 }
 
+// SetHooks installs lifecycle callbacks. Call before Start.
+func (svr *Service) SetHooks(h Hooks) {
+	svr.hooks = h
+}
+
+// SetLogCloser registers a closer for the default file logger (owned by Start).
+func (svr *Service) SetLogCloser(c io.Closer) {
+	svr.logCloser = c
+}
+
 func (svr *Service) Start(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -89,22 +115,26 @@ func (svr *Service) Start(ctx context.Context) error {
 	svr.ctx = runCtx
 	svr.cancel = cancel
 
-	if err := svr.loginWithBackoff(firstLoginMaxBackoff); err != nil {
+	proclife.RemoveStaleOldBinary()
+	userenv.Capture()
+
+	if err := svr.loginWithBackoff(firstLoginMaxBackoff, 0); err != nil {
 		cancel()
 		return err
 	}
 
 	svr.logger.Info("orbitproxy-go started",
-		 "client_key", svr.cfg.ClientKey,
+		"machine_key", svr.cfg.MachineKey,
 		"edge_addr", svr.cfg.EdgeAddr,
 		"soft_version", svr.cfg.SoftVersion,
 	)
+	svr.startEndpointWatcher()
 	go svr.keepGatewayConnectionAlive()
 	return nil
 }
 
-// ClientKey returns the bound client key for this SDK client.
-func (svr *Service) ClientKey() string { return svr.cfg.ClientKey }
+// MachineKey returns the bound client key for this SDK client.
+func (svr *Service) MachineKey() string { return svr.cfg.MachineKey }
 
 // Endpoints returns endpoints from the active control session's endpoint manager.
 func (svr *Service) Endpoints() []EndpointStatus {
@@ -112,22 +142,7 @@ func (svr *Service) Endpoints() []EndpointStatus {
 	if mgr == nil {
 		return nil
 	}
-	snap := mgr.Snapshot()
-	out := make([]EndpointStatus, 0, len(snap))
-	for _, b := range snap {
-		if b == nil {
-			continue
-		}
-		out = append(out, EndpointStatus{
-			EndpointID: b.EndpointID,
-			ProxyID:    b.ProxyID,
-			Type:       b.ProxyType,
-			Protocol:   b.Protocol,
-			Delivery:   b.Delivery,
-			LocalAddr:  b.LocalAddr,
-		})
-	}
-	return out
+	return snapshotEndpoints(mgr)
 }
 
 // Done is closed when the service permanently ends.
@@ -148,12 +163,17 @@ func (svr *Service) Close() error {
 	}
 	svr.stopCtl()
 	svr.finish()
+	if svr.logCloser != nil {
+		_ = svr.logCloser.Close()
+		svr.logCloser = nil
+	}
 	return nil
 }
 
 func (svr *Service) keepGatewayConnectionAlive() {
 	defer svr.finish()
 
+	attempt := 0
 	for {
 		if svr.ctx.Err() != nil {
 			svr.setErr(svr.ctx.Err())
@@ -175,9 +195,10 @@ func (svr *Service) keepGatewayConnectionAlive() {
 		if ctl.PermanentlyDisconnected() {
 			reason := ctl.DisconnectReason()
 			svr.logger.Warn("edge session permanently closed, stop reconnecting",
-				 "client_key", svr.cfg.ClientKey,
+				"machine_key", svr.cfg.MachineKey,
 				"reason", reason,
 			)
+			svr.emitDisconnected(reason, true)
 			svr.setErr(fmt.Errorf("permanently disconnected: %s", reason))
 			return
 		}
@@ -187,30 +208,41 @@ func (svr *Service) keepGatewayConnectionAlive() {
 			return
 		}
 
+		attempt++
+		reason := "control connection closed"
 		svr.logger.Warn("control connection closed, reconnecting",
-			 "client_key", svr.cfg.ClientKey,
+			"machine_key", svr.cfg.MachineKey,
 			"edge_addr", svr.cfg.EdgeAddr,
 		)
+		svr.emitReconnecting(attempt, reason)
 
-		if err := svr.loginWithBackoff(reconnectMaxBackoff); err != nil {
+		if err := svr.loginWithBackoff(reconnectMaxBackoff, attempt); err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				svr.setErr(err)
 				return
 			}
+			if backoff.IsPermanent(err) {
+				svr.emitDisconnected(err.Error(), true)
+				svr.setErr(fmt.Errorf("permanently disconnected: %s", err))
+				return
+			}
+			svr.emitDisconnected(err.Error(), false)
 			svr.setErr(err)
 			return
 		}
+		attempt = 0
 	}
 }
 
-func (svr *Service) loginWithBackoff(maxInterval time.Duration) error {
+func (svr *Service) loginWithBackoff(maxInterval time.Duration, reconnectAttempt int) error {
 	policy := backoff.NewExponentialBackOff()
 	policy.MaxInterval = maxInterval
+	attempt := reconnectAttempt
 
 	return backoff.Loop(svr.ctx, policy, func(ctx context.Context) error {
 		if err := svr.login(ctx); err != nil {
 			svr.logger.Warn("connect to edge error",
-				 "client_key", svr.cfg.ClientKey,
+				"machine_key", svr.cfg.MachineKey,
 				"edge_addr", svr.cfg.EdgeAddr,
 				"err", err,
 			)
@@ -218,7 +250,7 @@ func (svr *Service) loginWithBackoff(maxInterval time.Duration) error {
 		}
 		backoff.Reset(policy)
 		svr.logger.Info("login to edge success",
-			 "client_key", svr.cfg.ClientKey,
+			"machine_key", svr.cfg.MachineKey,
 			"edge_addr", svr.cfg.EdgeAddr,
 		)
 		return nil
@@ -226,12 +258,16 @@ func (svr *Service) loginWithBackoff(maxInterval time.Duration) error {
 		if svr.ctx.Err() != nil {
 			return
 		}
+		attempt++
 		svr.logger.Warn("connect to edge failed, retrying",
-			 "client_key", svr.cfg.ClientKey,
+			"machine_key", svr.cfg.MachineKey,
 			"edge_addr", svr.cfg.EdgeAddr,
 			"err", err,
 			"retry_in", wait,
 		)
+		if reconnectAttempt > 0 || attempt > 1 {
+			svr.emitReconnecting(attempt, err.Error())
+		}
 	})
 }
 
@@ -258,11 +294,98 @@ func (svr *Service) login(ctx context.Context) error {
 	svr.mu.Unlock()
 
 	svr.logger.Info("edge session established",
-		 "client_key", svr.cfg.ClientKey,
+		"machine_key", svr.cfg.MachineKey,
 		"edge_id", sessionCtx.EdgeID,
 		"session_id", sessionCtx.SessionID,
 	)
+	svr.emitConnected(sessionCtx.SessionID)
+	svr.emitEndpointsSnapshot()
 	return nil
+}
+
+func (svr *Service) startEndpointWatcher() {
+	svr.watchOnce.Do(func() {
+		go svr.watchEndpoints()
+	})
+}
+
+func (svr *Service) watchEndpoints() {
+	var lastNotify <-chan struct{}
+	for {
+		if svr.ctx.Err() != nil {
+			return
+		}
+		mgr := svr.endpointMgr()
+		if mgr == nil {
+			select {
+			case <-svr.ctx.Done():
+				return
+			case <-time.After(50 * time.Millisecond):
+			}
+			continue
+		}
+		if lastNotify != mgr.Notify() {
+			lastNotify = mgr.Notify()
+			svr.emitEndpointsSnapshot()
+		}
+		select {
+		case <-svr.ctx.Done():
+			return
+		case <-lastNotify:
+			svr.emitEndpointsSnapshot()
+		}
+	}
+}
+
+func (svr *Service) emitConnected(sessionID string) {
+	if svr.hooks.OnConnected != nil {
+		svr.hooks.OnConnected(sessionID)
+	}
+}
+
+func (svr *Service) emitReconnecting(attempt int, reason string) {
+	if svr.hooks.OnReconnecting != nil {
+		svr.hooks.OnReconnecting(attempt, reason)
+	}
+}
+
+func (svr *Service) emitDisconnected(reason string, permanent bool) {
+	if svr.hooks.OnDisconnected != nil {
+		svr.hooks.OnDisconnected(reason, permanent)
+	}
+}
+
+func (svr *Service) emitEndpointsSnapshot() {
+	if svr.hooks.OnEndpoints == nil {
+		return
+	}
+	mgr := svr.endpointMgr()
+	if mgr == nil {
+		svr.hooks.OnEndpoints(nil)
+		return
+	}
+	svr.hooks.OnEndpoints(snapshotEndpoints(mgr))
+}
+
+func snapshotEndpoints(mgr *endpoint.Manager) []EndpointStatus {
+	snap := mgr.Snapshot()
+	out := make([]EndpointStatus, 0, len(snap))
+	for _, b := range snap {
+		if b == nil {
+			continue
+		}
+		out = append(out, EndpointStatus{
+			EndpointID:    b.EndpointID,
+			ProxyID:       b.ProxyID,
+			Type:          b.ProxyType,
+			Protocol:      b.Protocol,
+			PubHost:       b.PubHost,
+			Delivery:      b.Delivery,
+			LocalAddr:     b.LocalAddr,
+			HealthEnabled: b.HealthEnabled,
+		})
+	}
+	return out
 }
 
 func (svr *Service) getCtl() *gateway_ctl.Control {
@@ -283,6 +406,9 @@ func (svr *Service) stopCtl() {
 	svr.mu.Lock()
 	defer svr.mu.Unlock()
 	if svr.ctl != nil {
+		if mgr := svr.ctl.EndpointManager(); mgr != nil {
+			mgr.ShutdownExec()
+		}
 		svr.ctl.Close()
 		svr.ctl = nil
 	}

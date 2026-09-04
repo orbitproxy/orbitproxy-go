@@ -187,6 +187,7 @@ func testConnectOpts(api *httptest.Server) orbitproxy.Options {
 		MachineKey:  "ck_test",
 		APIURL:     api.URL,
 		HTTPClient: api.Client(),
+		Version:    "1.2.3",
 	}
 }
 
@@ -394,7 +395,6 @@ func TestConnectWorkConnForward(t *testing.T) {
 		}
 		_ = wire.WriteMsg(control, wire.ServerHello{EdgeID: "edge_1", SessionID: "sess_1"})
 
-		// Push endpoint then request a work conn.
 		_ = wire.WriteMsg(control, wire.NewEndpoint{
 			EndpointID:          "ep_1",
 			ProxyID:             "px_1",
@@ -403,20 +403,11 @@ func TestConnectWorkConnForward(t *testing.T) {
 			LocalServicePayload: json.RawMessage(`{"localAddr":"` + localLn.Addr().String() + `"}`),
 		})
 		time.Sleep(50 * time.Millisecond)
-		_ = wire.WriteMsg(control, wire.ReqWorkConn{})
 
-		work, err := session.Accept()
+		// Edge 直接打开 yamux stream 并发送 StartWorkConn
+		work, err := session.Open()
 		if err != nil {
-			t.Errorf("accept work: %v", err)
-			return
-		}
-		newWorkMsg, err := wire.ReadMsg(work)
-		if err != nil {
-			t.Errorf("read new_work_conn: %v", err)
-			return
-		}
-		if _, ok := newWorkMsg.(*wire.NewWorkConn); !ok {
-			t.Errorf("want NewWorkConn, got %T", newWorkMsg)
+			t.Errorf("open work stream: %v", err)
 			return
 		}
 		_ = wire.WriteMsg(work, wire.StartWorkConn{
@@ -519,17 +510,12 @@ func TestConnectListenMode(t *testing.T) {
 			Protocol:            "https",
 			LocalServicePayload: json.RawMessage(`{"delivery":"in_process"}`),
 		})
-		// Wait until the SDK has claimed the listener, then request work.
 		time.Sleep(500 * time.Millisecond)
-		_ = wire.WriteMsg(control, wire.ReqWorkConn{})
 
-		work, err := session.Accept()
+		// Edge 直接打开 yamux stream 并发送 StartWorkConn
+		work, err := session.Open()
 		if err != nil {
-			t.Errorf("accept work: %v", err)
-			return
-		}
-		if _, err := wire.ReadMsg(work); err != nil {
-			t.Errorf("read new_work_conn: %v", err)
+			t.Errorf("open work stream: %v", err)
 			return
 		}
 		_ = wire.WriteMsg(work, wire.StartWorkConn{
@@ -687,6 +673,7 @@ func TestRegisterAndStart(t *testing.T) {
 		MachineKey:  "ck_test",
 		APIURL:     api.URL,
 		HTTPClient: api.Client(),
+		Version:    "1.2.3",
 	})
 	if err != nil {
 		t.Fatalf("Register: %v", err)

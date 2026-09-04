@@ -1,8 +1,6 @@
 package endpoint
 
 import (
-	"encoding/json"
-	"fmt"
 	"net"
 	"strings"
 
@@ -28,7 +26,7 @@ func (TCPJoinHandler) InWorkConn(logger *slog.Logger, workStream net.Conn, start
 	localAddr := strings.TrimSpace(cfg.LocalAddr)
 	if localAddr == "" {
 		var err error
-		localAddr, err = requiredStringField(cfg.LocalServicePayload, "localAddr")
+		localAddr, err = LocalAddrFromPayload(cfg.LocalServicePayload)
 		if err != nil {
 			logger.Warn("resolve local service payload failed",
 				"proxy_id", start.ProxyID,
@@ -41,7 +39,9 @@ func (TCPJoinHandler) InWorkConn(logger *slog.Logger, workStream net.Conn, start
 	localConn, err := net.Dial("tcp", localAddr)
 	if err != nil {
 		logger.Warn("dial local address failed",
+			"stage", "local_dial",
 			"proxy_id", start.ProxyID,
+			"endpoint_id", start.EndpointID,
 			"local_addr", localAddr,
 			"err", err,
 		)
@@ -57,33 +57,11 @@ func (TCPJoinHandler) InWorkConn(logger *slog.Logger, workStream net.Conn, start
 		"local_addr", localAddr,
 	)
 
-	wrapped, recycle, err := stream.WrapWorkConn(workStream, stream.WorkConnWrapOptions{})
-	if err != nil {
-		_ = localConn.Close()
-		_ = workStream.Close()
-		logger.Warn("wrap work conn failed", "proxy_id", start.ProxyID, "err", err)
-		return
-	}
-	defer recycle()
-
-	inCount, outCount, _ := stream.Join(wrapped, localConn)
+	inCount, outCount, _ := stream.Join(workStream, localConn)
 	logger.Debug("work conn closed",
 		"proxy_id", start.ProxyID,
 		"endpoint_id", start.EndpointID,
 		"bytes_in", inCount,
 		"bytes_out", outCount,
 	)
-}
-
-func requiredStringField(raw json.RawMessage, key string) (string, error) {
-	var payload map[string]any
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return "", fmt.Errorf("unmarshal payload: %w", err)
-	}
-	value, _ := payload[key].(string)
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return "", fmt.Errorf("payload.%s is required", key)
-	}
-	return value, nil
 }

@@ -16,6 +16,7 @@ type NewEndpoint struct {
 	ProxyID               string                `json:"proxy_id"`
 	ProxyType             string                `json:"proxy_type"`
 	Protocol              string                `json:"protocol"`
+	PubHost               string                `json:"pub_host,omitempty"`
 	LocalServicePayload   json.RawMessage       `json:"local_service_payload,omitempty"`
 	HealthEnabled         bool                  `json:"health_enabled"`
 	HealthIntervalSeconds int                   `json:"health_interval_seconds"`

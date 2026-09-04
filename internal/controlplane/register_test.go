@@ -22,7 +22,7 @@ func TestRegisterSuccessEnvelope(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
-		if req.AuthToken != "tok_test" || req.MachineKey != "ck_test" || req.PublicKey == "" {
+		if req.AuthToken != "tok_test" || req.MachineKey != "ck_test" || req.PublicKey == "" || req.Version != "0.1.0" {
 			t.Fatalf("bad request: %+v", req)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -76,6 +76,7 @@ func TestRegisterFlatEdgeAddr(t *testing.T) {
 		MachineKey:  "ck_test",
 		PublicKey:  "pk",
 		HTTPClient: srv.Client(),
+		Version:    "1.2.3",
 	})
 	if err != nil {
 		t.Fatalf("Register: %v", err)
@@ -103,6 +104,7 @@ func TestRegisterHTTPError(t *testing.T) {
 		MachineKey:  "ck_test",
 		PublicKey:  "pk",
 		HTTPClient: srv.Client(),
+		Version:    "1.2.3",
 	})
 	if err == nil {
 		t.Fatal("expected error")
@@ -119,5 +121,13 @@ func TestRegisterRequiresFields(t *testing.T) {
 		AuthToken: "tok",
 	}); err == nil {
 		t.Fatal("expected MachineKey required")
+	}
+	if _, err := Register(context.Background(), RegisterOptions{
+		APIURL:     "http://example",
+		AuthToken:  "tok",
+		MachineKey: "ck",
+		PublicKey:  "pk",
+	}); err == nil {
+		t.Fatal("expected version required")
 	}
 }

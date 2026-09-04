@@ -12,6 +12,7 @@ type Config struct {
 	ProxyID               string
 	ProxyType             string
 	Protocol              string
+	PubHost               string
 	Delivery              string
 	LocalAddr             string
 	LocalServicePayload   json.RawMessage
@@ -31,6 +32,7 @@ func configFromNewEndpoint(in *wire.NewEndpoint) *Config {
 		ProxyID:               in.ProxyID,
 		ProxyType:             in.ProxyType,
 		Protocol:              in.Protocol,
+		PubHost:               in.PubHost,
 		Delivery:              ResolveDelivery(in.LocalServicePayload),
 		LocalAddr:             p.LocalAddr,
 		LocalServicePayload:   in.LocalServicePayload,

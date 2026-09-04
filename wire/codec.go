@@ -42,15 +42,22 @@ func NewMsgTransportMapper() *MsgTransportMapper {
 func (m *MsgTransportMapper) registerAll() {
 	m.registerMsg(TypeClientHello, ClientHello{})
 	m.registerMsg(TypeServerHello, ServerHello{})
-	m.registerMsg(TypeReqWorkConn, ReqWorkConn{})
-	m.registerMsg(TypeNewWorkConn, NewWorkConn{})
 	m.registerMsg(TypeStartWorkConn, StartWorkConn{})
 	m.registerMsg(TypeNewEndpoint, NewEndpoint{})
 	m.registerMsg(TypeCloseEndpoint, CloseEndpoint{})
 	m.registerMsg(TypeEndpointHealth, EndpointHealth{})
 	m.registerMsg(TypeDiscoverTools, DiscoverTools{})
 	m.registerMsg(TypeDiscoverToolsResult, DiscoverToolsResult{})
+	m.registerMsg(TypeExecPreflight, ExecPreflight{})
+	m.registerMsg(TypeExecPreflightResult, ExecPreflightResult{})
+	m.registerMsg(TypePreflight, Preflight{})
+	m.registerMsg(TypePreflightResult, PreflightResult{})
+	m.registerMsg(TypeEndpointDiagnostic, EndpointDiagnostic{})
 	m.registerMsg(TypeDisconnect, Disconnect{})
+	m.registerMsg(TypeStop, Stop{})
+	m.registerMsg(TypeRestart, Restart{})
+	m.registerMsg(TypeUpdate, Update{})
+	m.registerMsg(TypeLifecycleResult, LifecycleResult{})
 }
 
 func (m *MsgTransportMapper) registerMsg(typeByte byte, prototype Message) {

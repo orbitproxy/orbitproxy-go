@@ -2,7 +2,6 @@ package orbitproxy
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 
 	"github.com/orbitproxy/orbitproxy-go/service"
@@ -18,10 +17,11 @@ type Options struct {
 	// APIURL is required: control-plane base URL for /v1/machines/register.
 	APIURL string
 
-	// Logger receives SDK log messages via standard log/slog.Logger.
-	// Nil discards all messages.
-	Logger     *slog.Logger
+	// Logger configures default dual-channel logging or a custom slog sink.
+	Logger LoggerOptions
+
 	HTTPClient *http.Client // optional; used only for register HTTP, not edge traffic
+	Version    string       // semver; empty falls back to Version() and still must be semver
 
 	// Lifecycle hooks (same as StartOptions).
 	OnConnected    func(sessionID string)
@@ -35,9 +35,10 @@ type Options struct {
 func Connect(ctx context.Context, opts Options) (*service.Service, error) {
 	id, err := Register(ctx, RegisterOptions{
 		AuthToken:  opts.AuthToken,
-		MachineKey:  opts.MachineKey,
+		MachineKey: opts.MachineKey,
 		APIURL:     opts.APIURL,
 		HTTPClient: opts.HTTPClient,
+		Version:    opts.Version,
 	})
 	if err != nil {
 		return nil, err

@@ -1,4 +1,4 @@
-package mcpdiscover
+package discover
 
 import (
 	"context"
