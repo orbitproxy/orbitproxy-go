@@ -20,7 +20,7 @@ func TestParseExecPayloadRewritesFilesystemRoot(t *testing.T) {
 	cfg, err := ParseExecPayload(json.RawMessage(`{
 		"command":"npx",
 		"args":["--no-install","@modelcontextprotocol/server-filesystem","/data"],
-		"catalogKey":"filesystem"
+		"family_key":"filesystem"
 	}`))
 	if err != nil {
 		t.Fatal(err)
@@ -37,7 +37,7 @@ func TestParseExecPayloadLeavesMysqlArgs(t *testing.T) {
 	cfg, err := ParseExecPayload(json.RawMessage(`{
 		"command":"npx",
 		"args":["--no-install","@benborla29/mcp-server-mysql"],
-		"catalogKey":"mysql"
+		"family_key":"mysql"
 	}`))
 	if err != nil {
 		t.Fatal(err)

@@ -2,9 +2,9 @@
 //
 // Product concepts:
 //
-//   - Preflight (mcp/preflight): one-shot create/sync readiness. Always runs
-//     tools/list via mcp/discover, then catalog-specific checks. Success
-//     overwrites endpoint tools in the control plane.
+//   - Preflight (mcp/preflight): one-shot create/sync readiness. Official
+//     runs CheckCommand + package version only. Custom lists via mcp/discover
+//     following nextCursor. Success overwrites custom endpoint tools.
 //   - Discover Tools (mcp/discover): independent tools/list sync for manual
 //     "update tools". Does not run catalog checks by default.
 //   - Health Probe (package health + optional mcp/probe): continuous liveness.

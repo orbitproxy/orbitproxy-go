@@ -2,13 +2,14 @@ package wire
 
 import "encoding/json"
 
-// Preflight asks the client to run full MCP preflight for an endpoint ('R').
-// Unlike ExecPreflight (command-only), this runs tools/list + catalog checks
-// and returns tools for control-plane overwrite.
+// Preflight asks the client to run MCP preflight for an endpoint ('R').
+// Official (SkipProtocol): CheckCommand + package version only.
+// Custom: CheckCommand + tools/list following nextCursor.
 type Preflight struct {
 	RequestID      string `json:"request_id"`
 	EndpointID     string `json:"endpoint_id"`
 	TimeoutSeconds int    `json:"timeout_seconds,omitempty"`
+	SkipProtocol   bool   `json:"skip_protocol,omitempty"`
 }
 
 func (Preflight) MsgType() MessageType { return MessageTypePreflight }

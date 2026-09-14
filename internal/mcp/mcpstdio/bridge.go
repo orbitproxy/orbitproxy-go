@@ -249,7 +249,7 @@ func ParseExecPayload(raw json.RawMessage) (*SpawnConfig, error) {
 		Args           []string `json:"args"`
 		WorkDir        string   `json:"workDir"`
 		EnvPassthrough []string `json:"envPassthrough"`
-		CatalogKey     string   `json:"catalogKey"`
+		FamilyKey      string   `json:"family_key"`
 	}
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return nil, fmt.Errorf("decode exec payload: %w", err)
@@ -259,7 +259,7 @@ func ParseExecPayload(raw json.RawMessage) (*SpawnConfig, error) {
 	}
 	return &SpawnConfig{
 		Command:        payload.Command,
-		Args:           applyFilesystemOpenRoot(payload.CatalogKey, payload.Args),
+		Args:           applyFilesystemOpenRoot(payload.FamilyKey, payload.Args),
 		WorkDir:        payload.WorkDir,
 		EnvPassthrough: payload.EnvPassthrough,
 	}, nil

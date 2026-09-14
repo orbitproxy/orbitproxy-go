@@ -2,6 +2,7 @@ package preflight
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -15,11 +16,12 @@ import (
 
 // Command error codes (aligned with execbridge / wire exec_preflight).
 const (
-	CodeCommandNotFound      = "command_not_found"
-	CodeCommandNotExecutable = "command_not_executable"
-	CodeSpawnFailed          = "spawn_failed"
-	CodePackageNotInstalled  = "package_not_installed"
-	CodeEnvFileMissing       = "env_file_missing"
+	CodeCommandNotFound        = "command_not_found"
+	CodeCommandNotExecutable   = "command_not_executable"
+	CodeSpawnFailed            = "spawn_failed"
+	CodePackageNotInstalled    = "package_not_installed"
+	CodePackageVersionMismatch = "package_version_mismatch"
+	CodeEnvFileMissing         = "env_file_missing"
 )
 
 // CommandConfig is the static exec command check input (no process start).
@@ -108,19 +110,19 @@ func CheckCommand(cfg CommandConfig) *CommandResult {
 	}
 
 	if pkg := npxPackageSpec(cfg.Command, cfg.Args); pkg != "" {
-		if !npmPackageInstalled(pkg, resolvedPath, cfg.WorkDir) {
+		if code := npmPackageInstalled(pkg, resolvedPath, cfg.WorkDir); code != "" {
 			return &CommandResult{
-				ErrorCode:    CodePackageNotInstalled,
-				ErrorMessage: fmt.Sprintf("MCP package not installed locally: %s", pkg),
+				ErrorCode:    code,
+				ErrorMessage: packageCheckMessage(code, pkg),
 				ResolvedPath: resolvedPath,
 			}
 		}
 	}
 	if pkg := uvxPackageSpec(cfg.Command, cfg.Args); pkg != "" {
-		if !uvToolInstalled(pkg) {
+		if code := uvToolInstalled(pkg); code != "" {
 			return &CommandResult{
-				ErrorCode:    CodePackageNotInstalled,
-				ErrorMessage: fmt.Sprintf("MCP package not installed locally: %s", pkg),
+				ErrorCode:    code,
+				ErrorMessage: packageCheckMessage(code, pkg),
 				ResolvedPath: resolvedPath,
 			}
 		}
@@ -170,17 +172,61 @@ func packageDirName(spec string) string {
 	return spec
 }
 
-func npmPackageInstalled(spec, npxPath, workDir string) bool {
+func packageCheckMessage(code, spec string) string {
+	if code == CodePackageVersionMismatch {
+		return fmt.Sprintf("MCP package version mismatch: %s", spec)
+	}
+	return fmt.Sprintf("MCP package not installed locally: %s", spec)
+}
+
+func packagePinnedVersion(spec string) string {
+	name := packageDirName(spec)
+	if name == "" || name == spec {
+		return ""
+	}
+	if len(spec) > len(name)+1 && spec[len(name)] == '@' {
+		return spec[len(name)+1:]
+	}
+	return ""
+}
+
+func npmPackageJSONVersion(path string) (version string, ok bool) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	var meta struct {
+		Version string `json:"version"`
+	}
+	if json.Unmarshal(b, &meta) != nil {
+		return "", false
+	}
+	return meta.Version, true
+}
+
+// npmPackageInstalled 核本地 npm 包。空串 = 通过；否则为错误码。
+func npmPackageInstalled(spec, npxPath, workDir string) string {
 	name := packageDirName(spec)
 	if name == "" {
-		return false
+		return CodePackageNotInstalled
 	}
+	want := packagePinnedVersion(spec)
+	found := false
 	for _, dir := range npmPackageCandidateDirs(npxPath, workDir) {
-		if _, err := os.Stat(filepath.Join(dir, name, "package.json")); err == nil {
-			return true
+		pkgJSON := filepath.Join(dir, name, "package.json")
+		localVer, ok := npmPackageJSONVersion(pkgJSON)
+		if !ok {
+			continue
+		}
+		found = true
+		if want == "" || localVer == want {
+			return ""
 		}
 	}
-	return false
+	if !found {
+		return CodePackageNotInstalled
+	}
+	return CodePackageVersionMismatch
 }
 
 func npmPackageCandidateDirs(npxPath, workDir string) []string {
@@ -258,17 +304,109 @@ func uvToolName(spec string) string {
 	return spec
 }
 
-func uvToolInstalled(spec string) bool {
-	name := uvToolName(spec)
-	if name == "" {
-		return false
+func uvPinnedVersion(spec string) string {
+	if i := strings.Index(spec, "=="); i > 0 {
+		return spec[i+2:]
 	}
-	for _, dir := range uvToolCandidateDirs() {
-		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
-			return true
+	name := uvToolName(spec)
+	if name == "" || name == spec {
+		return ""
+	}
+	if len(spec) > len(name)+1 && spec[len(name)] == '@' {
+		return spec[len(name)+1:]
+	}
+	return ""
+}
+
+func firstLine(b []byte) string {
+	for i, c := range b {
+		if c == '\n' || c == '\r' {
+			return string(b[:i])
 		}
 	}
-	return false
+	return string(b)
+}
+
+func parseMetadataVersion(b []byte) string {
+	for _, line := range strings.Split(string(b), "\n") {
+		if len(line) > 0 && line[len(line)-1] == '\r' {
+			line = line[:len(line)-1]
+		}
+		if rest, ok := strings.CutPrefix(line, "Version: "); ok {
+			return rest
+		}
+		if rest, ok := strings.CutPrefix(line, "Version:"); ok {
+			if len(rest) > 0 && rest[0] == ' ' {
+				rest = rest[1:]
+			}
+			return rest
+		}
+	}
+	return ""
+}
+
+func uvToolLocalVersion(toolDir string) (version string, ok bool) {
+	if info, err := os.Stat(toolDir); err != nil || !info.IsDir() {
+		return "", false
+	}
+	if b, err := os.ReadFile(filepath.Join(toolDir, "VERSION")); err == nil {
+		if v := firstLine(b); v != "" {
+			return v, true
+		}
+	}
+	patterns := []string{
+		filepath.Join(toolDir, "lib", "python*", "site-packages", "*.dist-info", "METADATA"),
+		filepath.Join(toolDir, "*.dist-info", "METADATA"),
+	}
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			continue
+		}
+		for _, path := range matches {
+			b, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			if v := parseMetadataVersion(b); v != "" {
+				return v, true
+			}
+		}
+	}
+	return "", true
+}
+
+// uvToolInstalled 核本地 uv tool。空串 = 通过；否则为错误码。
+func uvToolInstalled(spec string) string {
+	name := uvToolName(spec)
+	if name == "" {
+		return CodePackageNotInstalled
+	}
+	want := uvPinnedVersion(spec)
+	found := false
+	sawMismatch := false
+	for _, dir := range uvToolCandidateDirs() {
+		toolDir := filepath.Join(dir, name)
+		localVer, ok := uvToolLocalVersion(toolDir)
+		if !ok {
+			continue
+		}
+		found = true
+		if want == "" {
+			return ""
+		}
+		if localVer == want {
+			return ""
+		}
+		sawMismatch = true
+	}
+	if !found {
+		return CodePackageNotInstalled
+	}
+	if sawMismatch || want != "" {
+		return CodePackageVersionMismatch
+	}
+	return ""
 }
 
 func uvToolCandidateDirs() []string {

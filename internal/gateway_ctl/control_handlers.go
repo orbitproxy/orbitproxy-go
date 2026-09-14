@@ -222,6 +222,7 @@ func (ctl *Control) runPreflight(in *wire.Preflight) {
 		EndpointID:     endpointID,
 		MachineDir:     ctl.machineDir(),
 		OnDiag:         ctl.reportEndpointDiagnostic,
+		SkipProtocol:   in.SkipProtocol || preflight.FamilyKeyFromPayload(rt.Config().LocalServicePayload) != "",
 	})
 	if err != nil {
 		result.Status = "failed"
@@ -343,7 +344,7 @@ func (ctl *Control) handleExecPreflight(m wire.Message) {
 		switch pf.ErrorCode {
 		case preflight.CodeCommandNotFound:
 			// all false
-		case preflight.CodePackageNotInstalled:
+		case preflight.CodePackageNotInstalled, preflight.CodePackageVersionMismatch:
 			result.CommandFound = true
 			result.CommandExecutable = true
 		case preflight.CodeCommandNotExecutable:

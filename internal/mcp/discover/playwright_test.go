@@ -13,10 +13,11 @@ func TestIsPlaywrightPayload(t *testing.T) {
 		raw  string
 		want bool
 	}{
-		{name: "catalogKey", raw: `{"catalogKey":"playwright","localAddr":"127.0.0.1:8931"}`, want: true},
-		{name: "name playwright", raw: `{"name":"Playwright","localAddr":"127.0.0.1:8931"}`, want: true},
-		{name: "legacy name typo", raw: `{"name":"playright","localAddr":"127.0.0.1:8931"}`, want: true},
-		{name: "other mcp", raw: `{"catalogKey":"filesystem","localAddr":"127.0.0.1:9000"}`, want: false},
+		{name: "family_key", raw: `{"family_key":"playwright","localAddr":"127.0.0.1:8931"}`, want: true},
+		{name: "family_key other", raw: `{"family_key":"filesystem","localAddr":"127.0.0.1:9000"}`, want: false},
+		{name: "catalogKey ignored", raw: `{"catalogKey":"playwright","localAddr":"127.0.0.1:8931"}`, want: false},
+		{name: "name ignored", raw: `{"name":"Playwright","localAddr":"127.0.0.1:8931"}`, want: false},
+		{name: "playright ignored", raw: `{"name":"playright","localAddr":"127.0.0.1:8931"}`, want: false},
 		{name: "empty", raw: `{"localAddr":"127.0.0.1:8931"}`, want: false},
 	}
 	for _, tc := range cases {

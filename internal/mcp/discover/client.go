@@ -105,15 +105,57 @@ func ListToolsViaTransport(ctx context.Context, transport Transport) (Result, er
 		return Result{}, fmt.Errorf("initialized notify: %w", err)
 	}
 
+	tools := make([]Tool, 0)
+	truncated := false
+	cursor := ""
+	reqID := 2
+	for {
+		page, nextCursor, err := listToolsPage(ctx, transport, reqID, cursor)
+		if err != nil {
+			return Result{}, err
+		}
+		for _, item := range page {
+			if len(tools) >= maxTools {
+				truncated = true
+				break
+			}
+			tools = append(tools, item)
+		}
+		if len(tools) >= maxTools {
+			if nextCursor != "" || len(page) > maxTools {
+				truncated = true
+			}
+			break
+		}
+		if nextCursor == "" || nextCursor == cursor {
+			break
+		}
+		cursor = nextCursor
+		reqID++
+	}
+
+	return Result{
+		Tools:         tools,
+		Truncated:     truncated,
+		ServerName:    initEnvelope.Result.ServerInfo.Name,
+		ServerVersion: initEnvelope.Result.ServerInfo.Version,
+	}, nil
+}
+
+func listToolsPage(ctx context.Context, transport Transport, id int, cursor string) ([]Tool, string, error) {
+	params := map[string]any{}
+	if cursor != "" {
+		params["cursor"] = cursor
+	}
 	toolsPayload, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",
-		"id":      2,
+		"id":      id,
 		"method":  "tools/list",
-		"params":  map[string]any{},
+		"params":  params,
 	})
 	toolsResp, err := transport.Send(ctx, toolsPayload)
 	if err != nil {
-		return Result{}, fmt.Errorf("tools/list: %w", err)
+		return nil, "", fmt.Errorf("tools/list: %w", err)
 	}
 	if fixed, ok := toolschema.SanitizeToolsListJSON(toolsResp); ok {
 		toolsResp = fixed
@@ -126,6 +168,7 @@ func ListToolsViaTransport(ctx context.Context, transport Transport) (Result, er
 				Description string          `json:"description"`
 				InputSchema json.RawMessage `json:"inputSchema"`
 			} `json:"tools"`
+			NextCursor string `json:"nextCursor"`
 		} `json:"result"`
 		Error *struct {
 			Code    int    `json:"code"`
@@ -133,10 +176,10 @@ func ListToolsViaTransport(ctx context.Context, transport Transport) (Result, er
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(toolsResp, &toolsEnvelope); err != nil {
-		return Result{}, fmt.Errorf("decode tools/list: %w", err)
+		return nil, "", fmt.Errorf("decode tools/list: %w", err)
 	}
 	if toolsEnvelope.Error != nil {
-		return Result{}, fmt.Errorf("tools/list error: %s", toolsEnvelope.Error.Message)
+		return nil, "", fmt.Errorf("tools/list error: %s", toolsEnvelope.Error.Message)
 	}
 
 	tools := make([]Tool, 0, len(toolsEnvelope.Result.Tools))
@@ -150,19 +193,7 @@ func ListToolsViaTransport(ctx context.Context, transport Transport) (Result, er
 			InputSchema: item.InputSchema,
 		})
 	}
-
-	truncated := false
-	if len(tools) > maxTools {
-		tools = tools[:maxTools]
-		truncated = true
-	}
-
-	return Result{
-		Tools:         tools,
-		Truncated:     truncated,
-		ServerName:    initEnvelope.Result.ServerInfo.Name,
-		ServerVersion: initEnvelope.Result.ServerInfo.Version,
-	}, nil
+	return tools, toolsEnvelope.Result.NextCursor, nil
 }
 
 // ListToolsViaStdio 使用临时 stdio 会话做 tools/list（不含 catalog 预检）。

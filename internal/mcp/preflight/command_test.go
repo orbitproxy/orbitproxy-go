@@ -76,14 +76,29 @@ func TestCheckCommandNotExecutable(t *testing.T) {
 func TestPackageDirName(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
-		"@benborla29/mcp-server-mysql":        "@benborla29/mcp-server-mysql",
-		"@benborla29/mcp-server-mysql@1.0.0":  "@benborla29/mcp-server-mysql",
-		"left-pad":                            "left-pad",
-		"left-pad@1.3.0":                      "left-pad",
+		"@benborla29/mcp-server-mysql":       "@benborla29/mcp-server-mysql",
+		"@benborla29/mcp-server-mysql@1.0.0": "@benborla29/mcp-server-mysql",
+		"left-pad":                           "left-pad",
+		"left-pad@1.3.0":                     "left-pad",
 	}
 	for in, want := range cases {
 		if got := packageDirName(in); got != want {
 			t.Errorf("packageDirName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestPackagePinnedVersion(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"@benborla29/mcp-server-mysql@2.0.9": "2.0.9",
+		"@benborla29/mcp-server-mysql":       "",
+		"left-pad@1.3.0":                     "1.3.0",
+		"left-pad":                           "",
+	}
+	for in, want := range cases {
+		if got := packagePinnedVersion(in); got != want {
+			t.Errorf("packagePinnedVersion(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
@@ -111,8 +126,9 @@ func TestClassifyError(t *testing.T) {
 	}{
 		{fmt.Errorf("preflight: env_file_missing: environment variable file not found: /tmp/x.env"), CodeEnvFileMissing},
 		{fmt.Errorf("preflight: package_not_installed: MCP package not installed locally: @foo/bar"), CodePackageNotInstalled},
+		{fmt.Errorf("preflight: package_version_mismatch: MCP package version mismatch: @foo/bar@1.0.0"), CodePackageVersionMismatch},
 		{fmt.Errorf("preflight: command_not_found: command not found in PATH: echo"), CodeCommandNotFound},
-		{fmt.Errorf("preflight (mysql): mysql_query failed: connection refused"), "preflight_failed"},
+		{fmt.Errorf("preflight: dial failed: connection refused"), "dial_failed"},
 	}
 	for _, tc := range cases {
 		got, _ := ClassifyError(tc.err)
@@ -176,7 +192,7 @@ func TestCheckCommandFindsPackageOutsideNpxLayout(t *testing.T) {
 	if err := os.MkdirAll(pkgDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(pkgDir, "package.json"), []byte(`{"name":"@wonderwhy-er/desktop-commander"}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(pkgDir, "package.json"), []byte(`{"name":"@wonderwhy-er/desktop-commander","version":"0.2.47"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("ORBITPROXY_NPM_ROOT_G", root)
@@ -195,6 +211,108 @@ func TestUvxPackageSpecAndToolName(t *testing.T) {
 	}
 	if got := uvToolName("mcp-server-docker==0.3.0"); got != "mcp-server-docker" {
 		t.Fatalf("uvToolName = %q", got)
+	}
+}
+
+func TestCheckCommandNpxPackageVersionMismatch(t *testing.T) {
+	npxDir := t.TempDir()
+	npx := filepath.Join(npxDir, "npx")
+	if err := os.WriteFile(npx, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	workDir := t.TempDir()
+	pkgDir := filepath.Join(workDir, "node_modules", "@benborla29", "mcp-server-mysql")
+	if err := os.MkdirAll(pkgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, "package.json"), []byte(`{"name":"@benborla29/mcp-server-mysql","version":"2.0.0"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result := CheckCommand(CommandConfig{
+		Command: npx,
+		Args:    []string{"--no-install", "@benborla29/mcp-server-mysql@2.0.9"},
+		WorkDir: workDir,
+	})
+	if result.OK {
+		t.Fatal("expected version mismatch to fail")
+	}
+	if result.ErrorCode != CodePackageVersionMismatch {
+		t.Fatalf("ErrorCode = %q, want %q (%s)", result.ErrorCode, CodePackageVersionMismatch, result.ErrorMessage)
+	}
+}
+
+func TestCheckCommandNpxPackageVersionMatch(t *testing.T) {
+	npxDir := t.TempDir()
+	npx := filepath.Join(npxDir, "npx")
+	if err := os.WriteFile(npx, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	workDir := t.TempDir()
+	pkgDir := filepath.Join(workDir, "node_modules", "@benborla29", "mcp-server-mysql")
+	if err := os.MkdirAll(pkgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, "package.json"), []byte(`{"name":"@benborla29/mcp-server-mysql","version":"2.0.9"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result := CheckCommand(CommandConfig{
+		Command: npx,
+		Args:    []string{"--no-install", "@benborla29/mcp-server-mysql@2.0.9"},
+		WorkDir: workDir,
+	})
+	if !result.OK {
+		t.Fatalf("expected matching version to pass, got %s %s", result.ErrorCode, result.ErrorMessage)
+	}
+}
+
+func TestCheckCommandUvxVersionMismatch(t *testing.T) {
+	uvxDir := t.TempDir()
+	uvx := filepath.Join(uvxDir, "uvx")
+	if err := os.WriteFile(uvx, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	metaDir := filepath.Join(root, "mcp-server-docker", "lib", "python3.12", "site-packages", "mcp_server_docker-0.2.0.dist-info")
+	if err := os.MkdirAll(metaDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(metaDir, "METADATA"), []byte("Metadata-Version: 2.1\nName: mcp-server-docker\nVersion: 0.2.0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("UV_TOOL_DIR", root)
+	result := CheckCommand(CommandConfig{
+		Command: uvx,
+		Args:    []string{"mcp-server-docker==0.3.0"},
+	})
+	if result.OK {
+		t.Fatal("expected uv version mismatch to fail")
+	}
+	if result.ErrorCode != CodePackageVersionMismatch {
+		t.Fatalf("ErrorCode = %q, want %q (%s)", result.ErrorCode, CodePackageVersionMismatch, result.ErrorMessage)
+	}
+}
+
+func TestCheckCommandUvxVersionMatch(t *testing.T) {
+	uvxDir := t.TempDir()
+	uvx := filepath.Join(uvxDir, "uvx")
+	if err := os.WriteFile(uvx, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	toolDir := filepath.Join(root, "mcp-server-docker")
+	if err := os.MkdirAll(toolDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(toolDir, "VERSION"), []byte("0.3.0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("UV_TOOL_DIR", root)
+	result := CheckCommand(CommandConfig{
+		Command: uvx,
+		Args:    []string{"mcp-server-docker==0.3.0"},
+	})
+	if !result.OK {
+		t.Fatalf("expected matching uv version to pass, got %s %s", result.ErrorCode, result.ErrorMessage)
 	}
 }
 
