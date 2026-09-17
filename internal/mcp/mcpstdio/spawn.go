@@ -19,6 +19,7 @@ type SpawnConfig struct {
 	WorkDir        string   // 子进程工作目录，空则继承父进程
 	Env            []string // 显式设置的环境变量（KEY=VALUE 格式）
 	EnvPassthrough []string // 从父进程环境透传的变量名白名单
+	FamilyKey      string   // 官方 connector family，用于 spawn 前判定是否必须有 env 文件
 }
 
 // Process 是一个已启动的子进程，持有三个管道句柄。

@@ -3,6 +3,7 @@ package mcpstdio
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -85,6 +86,44 @@ func TestEndpointEnvFileReady(t *testing.T) {
 	}
 	if !EndpointEnvFileReady(dir, "mep_1") {
 		t.Fatal("file with KEY=VAL should be ready")
+	}
+}
+
+func TestRequiresEndpointEnvFile(t *testing.T) {
+	t.Parallel()
+	if !RequiresEndpointEnvFile("mysql", nil) {
+		t.Fatal("family_key mysql must require env file")
+	}
+	if !RequiresEndpointEnvFile("MySQL", nil) {
+		t.Fatal("family_key is case-insensitive")
+	}
+	if !RequiresEndpointEnvFile("", []string{"--no-install", "@benborla29/mcp-server-mysql@2.0.9"}) {
+		t.Fatal("mysql package args must require env file")
+	}
+	if RequiresEndpointEnvFile("filesystem", []string{"--no-install", "@modelcontextprotocol/server-filesystem", "/"}) {
+		t.Fatal("filesystem must not require env file")
+	}
+}
+
+func TestNewSessionMysqlMissingEnvFile(t *testing.T) {
+	t.Parallel()
+	_, err := NewSession(SessionConfig{
+		SpawnConfig: SpawnConfig{
+			Command:   "/bin/true",
+			Args:      []string{"--no-install", "@benborla29/mcp-server-mysql@2.0.9"},
+			FamilyKey: "mysql",
+		},
+		EndpointID: "mep_missing",
+		MachineDir: t.TempDir(),
+	})
+	if err == nil {
+		t.Fatal("expected env_file_missing before spawn")
+	}
+	if !strings.Contains(err.Error(), CodeEnvFileMissing) {
+		t.Fatalf("err = %v, want %s", err, CodeEnvFileMissing)
+	}
+	if !strings.Contains(err.Error(), "environment variable file not found") {
+		t.Fatalf("err = %v, want environment variable file not found", err)
 	}
 }
 

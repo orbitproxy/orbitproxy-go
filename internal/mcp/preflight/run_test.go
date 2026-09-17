@@ -106,6 +106,43 @@ func TestRunOfficialFamilyKeySkipsList(t *testing.T) {
 	}
 }
 
+func TestRunOfficialMysqlMissingEnvFile(t *testing.T) {
+	npxDir := t.TempDir()
+	npx := filepath.Join(npxDir, "npx")
+	if err := os.WriteFile(npx, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	workDir := t.TempDir()
+	pkgDir := filepath.Join(workDir, "node_modules", "@benborla29", "mcp-server-mysql")
+	if err := os.MkdirAll(pkgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, "package.json"), []byte(`{"name":"@benborla29/mcp-server-mysql","version":"2.0.9"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(map[string]any{
+		"family_key": "mysql",
+		"command":    npx,
+		"args":       []string{"--no-install", "@benborla29/mcp-server-mysql@2.0.9"},
+		"workDir":    workDir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = Run(context.Background(), RunOptions{
+		Payload:    payload,
+		EndpointID: "ep1",
+		MachineDir: t.TempDir(),
+	})
+	if err == nil {
+		t.Fatal("expected env_file_missing")
+	}
+	code, _ := ClassifyError(err)
+	if code != CodeEnvFileMissing {
+		t.Fatalf("ClassifyError = %q, want %q (%v)", code, CodeEnvFileMissing, err)
+	}
+}
+
 func TestRunOfficialVersionMismatch(t *testing.T) {
 	npxDir := t.TempDir()
 	npx := filepath.Join(npxDir, "npx")

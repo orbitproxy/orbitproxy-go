@@ -262,5 +262,6 @@ func ParseExecPayload(raw json.RawMessage) (*SpawnConfig, error) {
 		Args:           applyFilesystemOpenRoot(payload.FamilyKey, payload.Args),
 		WorkDir:        payload.WorkDir,
 		EnvPassthrough: payload.EnvPassthrough,
+		FamilyKey:      payload.FamilyKey,
 	}, nil
 }

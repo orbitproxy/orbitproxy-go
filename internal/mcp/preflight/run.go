@@ -81,12 +81,8 @@ func Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 			return nil, fmt.Errorf("preflight: %s: %s", cmd.ErrorCode, cmd.ErrorMessage)
 		}
 
-		if familyKey == "mysql" && !mcpstdio.EndpointEnvFileReady(opts.MachineDir, opts.EndpointID) {
-			path := mcpstdio.EndpointEnvFilePath(opts.MachineDir, opts.EndpointID)
-			if path == "" {
-				path = "env/<endpointId>.env"
-			}
-			return nil, fmt.Errorf("preflight: %s: environment variable file not found: %s", CodeEnvFileMissing, path)
+		if mcpstdio.RequiresEndpointEnvFile(familyKey, execCfg.Args) && !mcpstdio.EndpointEnvFileReady(opts.MachineDir, opts.EndpointID) {
+			return nil, mcpstdio.EnvFileMissingError(opts.MachineDir, opts.EndpointID)
 		}
 
 		if skipProtocol {

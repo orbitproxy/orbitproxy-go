@@ -2,10 +2,35 @@ package mcpstdio
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+const CodeEnvFileMissing = "env_file_missing"
+
+// RequiresEndpointEnvFile 判定该 endpoint 是否必须有本地 env 文件（现网 mysql）。
+func RequiresEndpointEnvFile(familyKey string, args []string) bool {
+	if strings.EqualFold(strings.TrimSpace(familyKey), "mysql") {
+		return true
+	}
+	for _, arg := range args {
+		if strings.Contains(strings.ToLower(arg), "mcp-server-mysql") {
+			return true
+		}
+	}
+	return false
+}
+
+// EnvFileMissingError 环境文件不存在或没有 KEY=VAL。
+func EnvFileMissingError(machineDir, endpointID string) error {
+	path := EndpointEnvFilePath(machineDir, endpointID)
+	if path == "" {
+		path = "env/<endpointId>.env"
+	}
+	return fmt.Errorf("%s: environment variable file not found: %s", CodeEnvFileMissing, path)
+}
 
 // EndpointEnvFileReady reports whether <machineDir>/env/<endpointID>.env exists
 // and contains at least one KEY=VAL pair.

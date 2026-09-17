@@ -59,6 +59,10 @@ func NewSession(cfg SessionConfig) (*Session, error) {
 		cfg.RequestTimeout = 30 * time.Second
 	}
 
+	if RequiresEndpointEnvFile(cfg.FamilyKey, cfg.Args) && !EndpointEnvFileReady(cfg.MachineDir, cfg.EndpointID) {
+		return nil, EnvFileMissingError(cfg.MachineDir, cfg.EndpointID)
+	}
+
 	cfg.SpawnConfig = ApplyEndpointEnvFile(cfg.SpawnConfig, cfg.MachineDir, cfg.EndpointID)
 
 	proc, err := Spawn(cfg.SpawnConfig)
