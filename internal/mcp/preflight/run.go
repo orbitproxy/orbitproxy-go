@@ -27,7 +27,7 @@ type RunOptions struct {
 	EndpointID     string
 	MachineDir     string
 	OnDiag         mcpstdio.DiagnosticCallback
-	// SkipProtocol 官方路径：只跑本地环境层（CheckCommand + 包版本），不 tools/list。
+	// SkipProtocol 官方路径：只跑本地环境层（CheckCommand + 包是否已安装），不 tools/list。
 	SkipProtocol bool
 }
 
@@ -46,7 +46,7 @@ func FamilyKeyFromPayload(raw json.RawMessage) string {
 }
 
 // Run executes create/sync preflight.
-// Official (SkipProtocol or family_key): CheckCommand + package version only.
+// Official (SkipProtocol or family_key): CheckCommand + package presence only.
 // Custom: CheckCommand (exec) + tools/list following nextCursor until end or limit.
 func Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 	if len(opts.Payload) == 0 {
@@ -147,8 +147,6 @@ func ClassifyError(err error) (code, message string) {
 	switch {
 	case strings.Contains(lower, CodeEnvFileMissing), strings.Contains(lower, "environment variable file not found"):
 		return CodeEnvFileMissing, message
-	case strings.Contains(lower, CodePackageVersionMismatch), strings.Contains(lower, "version mismatch"):
-		return CodePackageVersionMismatch, message
 	case strings.Contains(lower, "package_not_installed"), strings.Contains(lower, "not installed locally"):
 		return CodePackageNotInstalled, message
 	case strings.Contains(lower, "command_not_found"), strings.Contains(lower, "command not found"), strings.Contains(lower, "command is empty"):

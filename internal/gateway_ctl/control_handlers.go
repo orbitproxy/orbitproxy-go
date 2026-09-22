@@ -344,7 +344,7 @@ func (ctl *Control) handleExecPreflight(m wire.Message) {
 		switch pf.ErrorCode {
 		case preflight.CodeCommandNotFound:
 			// all false
-		case preflight.CodePackageNotInstalled, preflight.CodePackageVersionMismatch:
+		case preflight.CodePackageNotInstalled:
 			result.CommandFound = true
 			result.CommandExecutable = true
 		case preflight.CodeCommandNotExecutable:

@@ -143,35 +143,30 @@ func TestRunOfficialMysqlMissingEnvFile(t *testing.T) {
 	}
 }
 
-func TestRunOfficialVersionMismatch(t *testing.T) {
+func TestRunOfficialIgnoresPackageVersion(t *testing.T) {
 	npxDir := t.TempDir()
 	npx := filepath.Join(npxDir, "npx")
 	if err := os.WriteFile(npx, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	workDir := t.TempDir()
-	pkgDir := filepath.Join(workDir, "node_modules", "@benborla29", "mcp-server-mysql")
+	pkgDir := filepath.Join(workDir, "node_modules", "@modelcontextprotocol", "server-filesystem")
 	if err := os.MkdirAll(pkgDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(pkgDir, "package.json"), []byte(`{"name":"@benborla29/mcp-server-mysql","version":"1.0.0"}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(pkgDir, "package.json"), []byte(`{"name":"@modelcontextprotocol/server-filesystem","version":"1.0.0"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	payload, err := json.Marshal(map[string]any{
-		"family_key": "mysql",
+		"family_key": "filesystem",
 		"command":    npx,
-		"args":       []string{"--no-install", "@benborla29/mcp-server-mysql@2.0.9"},
+		"args":       []string{"--no-install", "@modelcontextprotocol/server-filesystem"},
 		"workDir":    workDir,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = Run(context.Background(), RunOptions{Payload: payload, SkipProtocol: true})
-	if err == nil {
-		t.Fatal("expected version mismatch")
-	}
-	code, _ := ClassifyError(err)
-	if code != CodePackageVersionMismatch {
-		t.Fatalf("ClassifyError = %q, want %q (%v)", code, CodePackageVersionMismatch, err)
+	if _, err = Run(context.Background(), RunOptions{Payload: payload, SkipProtocol: true}); err != nil {
+		t.Fatalf("expected installed package to pass, got %v", err)
 	}
 }
