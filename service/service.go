@@ -30,6 +30,13 @@ const (
 	DeliveryInProcess = endpoint.DeliveryInProcess
 )
 
+// EndpointProxy is one public proxy that references an endpoint.
+type EndpointProxy struct {
+	ProxyID string
+	PubHost string
+	PubPort int
+}
+
 // EndpointStatus is a snapshot of an edge-pushed endpoint.
 type EndpointStatus struct {
 	EndpointID    string
@@ -38,6 +45,7 @@ type EndpointStatus struct {
 	Delivery      string
 	LocalAddr     string
 	HealthEnabled bool
+	Proxies       []EndpointProxy
 }
 
 // Hooks are optional lifecycle callbacks. Nil fields are skipped.
@@ -372,6 +380,17 @@ func snapshotEndpoints(mgr *endpoint.Manager) []EndpointStatus {
 		if b == nil {
 			continue
 		}
+		var proxies []EndpointProxy
+		if len(b.Proxies) > 0 {
+			proxies = make([]EndpointProxy, 0, len(b.Proxies))
+			for _, proxy := range b.Proxies {
+				proxies = append(proxies, EndpointProxy{
+					ProxyID: proxy.ProxyID,
+					PubHost: proxy.PubHost,
+					PubPort: proxy.PubPort,
+				})
+			}
+		}
 		out = append(out, EndpointStatus{
 			EndpointID:    b.EndpointID,
 			Category:      b.Category,
@@ -379,6 +398,7 @@ func snapshotEndpoints(mgr *endpoint.Manager) []EndpointStatus {
 			Delivery:      b.Delivery,
 			LocalAddr:     b.LocalAddr,
 			HealthEnabled: b.HealthEnabled,
+			Proxies:       proxies,
 		})
 	}
 	return out

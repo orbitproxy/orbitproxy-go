@@ -89,6 +89,10 @@ func TestNewEndpointRoundTrip(t *testing.T) {
 		Category:            "basic",
 		Protocol:            "https",
 		LocalServicePayload: json.RawMessage(`{"localAddr":"127.0.0.1:8080"}`),
+		Proxies: []wire.EndpointProxy{
+			{ProxyID: "proxy-a", PubHost: "mcp.example.com", PubPort: 443},
+			{ProxyID: "proxy-b", PubHost: "composer.example.com", PubPort: 8443},
+		},
 	}
 	if err := wire.WriteMsg(&buf, original); err != nil {
 		t.Fatalf("WriteMsg: %v", err)
@@ -98,7 +102,8 @@ func TestNewEndpointRoundTrip(t *testing.T) {
 		t.Fatalf("ReadMsg: %v", err)
 	}
 	got, ok := decoded.(*wire.NewEndpoint)
-	if !ok || got.EndpointID != "ep-1" || got.Category != "basic" {
+	if !ok || got.EndpointID != "ep-1" || got.Category != "basic" || len(got.Proxies) != 2 ||
+		got.Proxies[0].PubHost != "mcp.example.com" || got.Proxies[1].PubPort != 8443 {
 		t.Fatalf("decoded = %+v, ok=%v", decoded, ok)
 	}
 }

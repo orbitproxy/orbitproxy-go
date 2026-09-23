@@ -18,6 +18,7 @@ type Config struct {
 	HealthIntervalSeconds int
 	HealthTimeoutSeconds  int
 	HealthMaxFailed       int
+	Proxies               []wire.EndpointProxy
 }
 
 func configFromNewEndpoint(in *wire.NewEndpoint) *Config {
@@ -36,5 +37,6 @@ func configFromNewEndpoint(in *wire.NewEndpoint) *Config {
 		HealthIntervalSeconds: in.HealthIntervalSeconds,
 		HealthTimeoutSeconds:  in.HealthTimeoutSeconds,
 		HealthMaxFailed:       in.HealthMaxFailed,
+		Proxies:               in.Proxies,
 	}
 }

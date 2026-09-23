@@ -9,6 +9,14 @@ type DiscoverToolsOptions struct {
 	TimeoutSeconds int    `json:"timeout_seconds,omitempty"`
 }
 
+// EndpointProxy is one public proxy that references this endpoint.
+// The client displays it. Forwarding does not use it.
+type EndpointProxy struct {
+	ProxyID string `json:"proxy_id"`
+	PubHost string `json:"pub_host"`
+	PubPort int    `json:"pub_port"`
+}
+
 // NewEndpoint notifies the client that an endpoint backend should start.
 // Optional DiscoverTools runs tools/list after install and sends DiscoverToolsResult.
 type NewEndpoint struct {
@@ -20,6 +28,7 @@ type NewEndpoint struct {
 	HealthIntervalSeconds int                   `json:"health_interval_seconds"`
 	HealthTimeoutSeconds  int                   `json:"health_timeout_seconds"`
 	HealthMaxFailed       int                   `json:"health_max_failed"`
+	Proxies               []EndpointProxy       `json:"proxies,omitempty"`
 	DiscoverTools         *DiscoverToolsOptions `json:"discover_tools,omitempty"`
 	Error                 string                `json:"error,omitempty"`
 }
