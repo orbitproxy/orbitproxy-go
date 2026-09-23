@@ -133,7 +133,6 @@ func (m *Manager) HandleNewEndpoint(logger *slog.Logger, in *wire.NewEndpoint) {
 	if in.Error != "" {
 		logger.Warn("new_endpoint rejected by edge",
 			"endpoint_id", in.EndpointID,
-			"proxy_id", in.ProxyID,
 			"error", in.Error,
 		)
 		m.delete(in.EndpointID)
@@ -145,8 +144,7 @@ func (m *Manager) HandleNewEndpoint(logger *slog.Logger, in *wire.NewEndpoint) {
 	m.signal()
 	logger.Info("endpoint registered",
 		"endpoint_id", cfg.EndpointID,
-		"proxy_id", cfg.ProxyID,
-		"type", cfg.ProxyType,
+		"category", cfg.Category,
 		"protocol", cfg.Protocol,
 		"delivery", cfg.Delivery,
 		"local_addr", cfg.LocalAddr,
@@ -166,7 +164,6 @@ func (m *Manager) HandleCloseEndpoint(logger *slog.Logger, in *wire.CloseEndpoin
 	m.signal()
 	logger.Info("endpoint removed",
 		"endpoint_id", in.EndpointID,
-		"proxy_id", in.ProxyID,
 	)
 }
 
@@ -181,7 +178,6 @@ func (m *Manager) HandleWorkConn(logger *slog.Logger, stream net.Conn, start *wi
 	}
 	if start.Error != "" {
 		logger.Warn("start_work_conn rejected by edge",
-			"proxy_id", start.ProxyID,
 			"endpoint_id", start.EndpointID,
 			"error", start.Error,
 		)
@@ -191,7 +187,6 @@ func (m *Manager) HandleWorkConn(logger *slog.Logger, stream net.Conn, start *wi
 	rt, ok := m.Get(start.EndpointID)
 	if !ok {
 		logger.Warn("start_work_conn for unknown endpoint",
-			"proxy_id", start.ProxyID,
 			"endpoint_id", start.EndpointID,
 		)
 		return false

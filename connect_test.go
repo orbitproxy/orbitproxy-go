@@ -397,8 +397,7 @@ func TestConnectWorkConnForward(t *testing.T) {
 
 		_ = wire.WriteMsg(control, wire.NewEndpoint{
 			EndpointID:          "ep_1",
-			ProxyID:             "px_1",
-			ProxyType:           "basic",
+			Category:            "basic",
 			Protocol:            "https",
 			LocalServicePayload: json.RawMessage(`{"localAddr":"` + localLn.Addr().String() + `"}`),
 		})
@@ -411,7 +410,6 @@ func TestConnectWorkConnForward(t *testing.T) {
 			return
 		}
 		_ = wire.WriteMsg(work, wire.StartWorkConn{
-			ProxyID:    "px_1",
 			EndpointID: "ep_1",
 			SourceAddr: "1.2.3.4:5",
 		})
@@ -505,8 +503,7 @@ func TestConnectListenMode(t *testing.T) {
 		_ = wire.WriteMsg(control, wire.ServerHello{EdgeID: "edge_1", SessionID: "sess_1"})
 		_ = wire.WriteMsg(control, wire.NewEndpoint{
 			EndpointID:          "ep_listen",
-			ProxyID:             "px_1",
-			ProxyType:           "basic",
+			Category:            "basic",
 			Protocol:            "https",
 			LocalServicePayload: json.RawMessage(`{"delivery":"in_process"}`),
 		})
@@ -519,7 +516,6 @@ func TestConnectListenMode(t *testing.T) {
 			return
 		}
 		_ = wire.WriteMsg(work, wire.StartWorkConn{
-			ProxyID:    "px_1",
 			EndpointID: "ep_listen",
 		})
 		_, _ = work.Write([]byte("via-listen"))
@@ -789,8 +785,7 @@ func TestConnectDiscoverToolsOnNewEndpoint(t *testing.T) {
 		_ = wire.WriteMsg(control, wire.ServerHello{EdgeID: "edge_1", SessionID: "sess_1"})
 		_ = wire.WriteMsg(control, wire.NewEndpoint{
 			EndpointID:          "ep_mcp",
-			ProxyID:             "px_mcp",
-			ProxyType:           "mcp",
+			Category:            "mcp",
 			Protocol:            "https",
 			LocalServicePayload: json.RawMessage(`{"localAddr":"` + mcp.Listener.Addr().String() + `","localPath":"/"}`),
 			DiscoverTools: &wire.DiscoverToolsOptions{
@@ -900,8 +895,7 @@ func TestConnectDiscoverToolsStandalone(t *testing.T) {
 		_ = wire.WriteMsg(control, wire.ServerHello{EdgeID: "edge_1", SessionID: "sess_1"})
 		_ = wire.WriteMsg(control, wire.NewEndpoint{
 			EndpointID:          "ep_mcp",
-			ProxyID:             "px_mcp",
-			ProxyType:           "mcp",
+			Category:            "mcp",
 			Protocol:            "https",
 			LocalServicePayload: json.RawMessage(`{"localAddr":"` + mcp.Listener.Addr().String() + `","localPath":"/"}`),
 		})

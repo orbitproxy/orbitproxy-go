@@ -19,8 +19,7 @@ func TestInProcessListenerAcceptsWorkConn(t *testing.T) {
 	mgr.SetContext(context.Background())
 	mgr.HandleNewEndpoint(sdklog.Nop(), &wire.NewEndpoint{
 		EndpointID:          "ep_listen",
-		ProxyID:             "px_1",
-		ProxyType:           "basic",
+		Category:            "basic",
 		Protocol:            "https",
 		LocalServicePayload: json.RawMessage(`{"delivery":"in_process"}`),
 	})
@@ -45,7 +44,6 @@ func TestInProcessListenerAcceptsWorkConn(t *testing.T) {
 	}()
 
 	mgr.HandleWorkConn(sdklog.Nop(), server, &wire.StartWorkConn{
-		ProxyID:    "px_1",
 		EndpointID: "ep_listen",
 	})
 
@@ -72,7 +70,6 @@ func TestInProcessDropsWhenNotClaimed(t *testing.T) {
 	mgr.SetContext(context.Background())
 	mgr.HandleNewEndpoint(sdklog.Nop(), &wire.NewEndpoint{
 		EndpointID:          "ep_listen",
-		ProxyID:             "px_1",
 		LocalServicePayload: json.RawMessage(`{"delivery":"in_process"}`),
 	})
 
@@ -81,7 +78,6 @@ func TestInProcessDropsWhenNotClaimed(t *testing.T) {
 
 	mgr.HandleWorkConn(sdklog.Nop(), server, &wire.StartWorkConn{
 		EndpointID: "ep_listen",
-		ProxyID:    "px_1",
 	})
 
 	_ = client.SetReadDeadline(time.Now().Add(500 * time.Millisecond))

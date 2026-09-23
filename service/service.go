@@ -33,10 +33,8 @@ const (
 // EndpointStatus is a snapshot of an edge-pushed endpoint.
 type EndpointStatus struct {
 	EndpointID    string
-	ProxyID       string
-	Type          string
+	Category      string
 	Protocol      string
-	PubHost       string
 	Delivery      string
 	LocalAddr     string
 	HealthEnabled bool
@@ -376,10 +374,8 @@ func snapshotEndpoints(mgr *endpoint.Manager) []EndpointStatus {
 		}
 		out = append(out, EndpointStatus{
 			EndpointID:    b.EndpointID,
-			ProxyID:       b.ProxyID,
-			Type:          b.ProxyType,
+			Category:      b.Category,
 			Protocol:      b.Protocol,
-			PubHost:       b.PubHost,
 			Delivery:      b.Delivery,
 			LocalAddr:     b.LocalAddr,
 			HealthEnabled: b.HealthEnabled,

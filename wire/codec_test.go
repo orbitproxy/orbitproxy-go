@@ -86,10 +86,8 @@ func TestNewEndpointRoundTrip(t *testing.T) {
 	var buf bytes.Buffer
 	original := wire.NewEndpoint{
 		EndpointID:          "ep-1",
-		ProxyID:             "px-1",
-		ProxyType:           "basic",
+		Category:            "basic",
 		Protocol:            "https",
-		PubHost:             "app.example.com",
 		LocalServicePayload: json.RawMessage(`{"localAddr":"127.0.0.1:8080"}`),
 	}
 	if err := wire.WriteMsg(&buf, original); err != nil {
@@ -100,7 +98,7 @@ func TestNewEndpointRoundTrip(t *testing.T) {
 		t.Fatalf("ReadMsg: %v", err)
 	}
 	got, ok := decoded.(*wire.NewEndpoint)
-	if !ok || got.EndpointID != "ep-1" || got.PubHost != "app.example.com" {
+	if !ok || got.EndpointID != "ep-1" || got.Category != "basic" {
 		t.Fatalf("decoded = %+v, ok=%v", decoded, ok)
 	}
 }
@@ -145,7 +143,6 @@ func TestDiscoverToolsRoundTrip(t *testing.T) {
 	var epBuf bytes.Buffer
 	ep := wire.NewEndpoint{
 		EndpointID: "ep_1",
-		ProxyID:    "px_1",
 		DiscoverTools: &wire.DiscoverToolsOptions{
 			RequestID: "mer_2",
 		},

@@ -12,7 +12,6 @@ func TestReportHealthOnlyProbeUpdates(t *testing.T) {
 	var got []*wire.EndpointHealth
 	rt := NewRuntime(context.Background(), &Config{
 		EndpointID:    "ep-mysql",
-		ProxyID:       "proxy-mcp",
 		Delivery:      DeliveryExec,
 		HealthEnabled: true,
 	}, func(msg *wire.EndpointHealth) error {
@@ -44,7 +43,6 @@ func TestReportHealthDisabledIgnoresProbe(t *testing.T) {
 	var got int
 	rt := NewRuntime(context.Background(), &Config{
 		EndpointID:    "ep-mysql",
-		ProxyID:       "proxy-mcp",
 		Delivery:      DeliveryExec,
 		HealthEnabled: false,
 	}, func(msg *wire.EndpointHealth) error {

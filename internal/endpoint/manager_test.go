@@ -15,8 +15,7 @@ func TestManagerUpsertAndDelete(t *testing.T) {
 	mgr := NewManager()
 	mgr.HandleNewEndpoint(logger, &wire.NewEndpoint{
 		EndpointID:          "ep-1",
-		ProxyID:             "px-1",
-		ProxyType:           "basic",
+		Category:            "basic",
 		Protocol:            "https",
 		LocalServicePayload: json.RawMessage(`{"localAddr":"127.0.0.1:8080"}`),
 	})
@@ -33,7 +32,7 @@ func TestManagerUpsertAndDelete(t *testing.T) {
 		t.Fatalf("Config() = %+v", cfg)
 	}
 
-	mgr.HandleCloseEndpoint(logger, &wire.CloseEndpoint{EndpointID: "ep-1", ProxyID: "px-1"})
+	mgr.HandleCloseEndpoint(logger, &wire.CloseEndpoint{EndpointID: "ep-1"})
 	if mgr.Len() != 0 {
 		t.Fatalf("Len() after delete = %d, want 0", mgr.Len())
 	}
@@ -45,7 +44,6 @@ func TestManagerRejectsNewWithError(t *testing.T) {
 	mgr := NewManager()
 	mgr.HandleNewEndpoint(sdklog.Nop(), &wire.NewEndpoint{
 		EndpointID: "ep-1",
-		ProxyID:    "px-1",
 		Error:      "disabled",
 	})
 	if mgr.Len() != 0 {
@@ -59,16 +57,14 @@ func TestRuntimeUpdatePreservesInstance(t *testing.T) {
 	mgr := NewManager()
 	mgr.HandleNewEndpoint(sdklog.Nop(), &wire.NewEndpoint{
 		EndpointID:          "ep-1",
-		ProxyID:             "px-1",
-		ProxyType:           "basic",
+		Category:            "basic",
 		LocalServicePayload: json.RawMessage(`{"localAddr":"127.0.0.1:8080"}`),
 	})
 	rt1, _ := mgr.Get("ep-1")
 
 	mgr.HandleNewEndpoint(sdklog.Nop(), &wire.NewEndpoint{
 		EndpointID:          "ep-1",
-		ProxyID:             "px-1",
-		ProxyType:           "basic",
+		Category:            "basic",
 		LocalServicePayload: json.RawMessage(`{"localAddr":"127.0.0.1:9090"}`),
 	})
 	rt2, _ := mgr.Get("ep-1")

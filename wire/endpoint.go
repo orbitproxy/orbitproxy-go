@@ -13,10 +13,8 @@ type DiscoverToolsOptions struct {
 // Optional DiscoverTools runs tools/list after install and sends DiscoverToolsResult.
 type NewEndpoint struct {
 	EndpointID            string                `json:"endpoint_id"`
-	ProxyID               string                `json:"proxy_id"`
-	ProxyType             string                `json:"proxy_type"`
+	Category              string                `json:"category"`
 	Protocol              string                `json:"protocol"`
-	PubHost               string                `json:"pub_host,omitempty"`
 	LocalServicePayload   json.RawMessage       `json:"local_service_payload,omitempty"`
 	HealthEnabled         bool                  `json:"health_enabled"`
 	HealthIntervalSeconds int                   `json:"health_interval_seconds"`
@@ -31,7 +29,6 @@ func (NewEndpoint) MsgType() MessageType { return MessageTypeNewEndpoint }
 // CloseEndpoint notifies the client to tear down an endpoint backend.
 type CloseEndpoint struct {
 	EndpointID string `json:"endpoint_id"`
-	ProxyID    string `json:"proxy_id,omitempty"`
 }
 
 func (CloseEndpoint) MsgType() MessageType { return MessageTypeCloseEndpoint }

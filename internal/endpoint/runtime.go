@@ -134,7 +134,6 @@ func (rt *Runtime) reportHealth(obs health.Observation) {
 	}
 	msg := &wire.EndpointHealth{
 		EndpointID: cfg.EndpointID,
-		ProxyID:    cfg.ProxyID,
 		Healthy:    obs.Healthy,
 		Ts:         obs.ObservedAt.Unix(),
 	}
@@ -223,14 +222,12 @@ func (rt *Runtime) InWorkConn(logger *slog.Logger, stream net.Conn, start *wire.
 
 	if cfg == nil {
 		logger.Warn("endpoint runtime not ready",
-			"proxy_id", start.ProxyID,
 			"endpoint_id", start.EndpointID,
 		)
 		return false
 	}
 	if start.EndpointID != "" && start.EndpointID != cfg.EndpointID {
 		logger.Warn("start_work_conn endpoint mismatch",
-			"proxy_id", start.ProxyID,
 			"endpoint_id", start.EndpointID,
 			"config_endpoint_id", cfg.EndpointID,
 		)
@@ -240,14 +237,12 @@ func (rt *Runtime) InWorkConn(logger *slog.Logger, stream net.Conn, start *wire.
 	if cfg.Delivery == DeliveryInProcess {
 		if listener == nil {
 			logger.Warn("in-process endpoint not claimed via Listen, dropping work conn",
-				"proxy_id", start.ProxyID,
 				"endpoint_id", start.EndpointID,
 			)
 			return false
 		}
 		if !listener.Offer(stream) {
 			logger.Warn("in-process Accept too slow, dropping work conn",
-				"proxy_id", start.ProxyID,
 				"endpoint_id", start.EndpointID,
 			)
 			return false
@@ -262,7 +257,6 @@ func (rt *Runtime) InWorkConn(logger *slog.Logger, stream net.Conn, start *wire.
 		rt.mu.RUnlock()
 		if bridge == nil {
 			logger.Warn("exec bridge not initialized, dropping work conn",
-				"proxy_id", start.ProxyID,
 				"endpoint_id", start.EndpointID,
 			)
 			return false

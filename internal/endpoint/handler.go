@@ -29,7 +29,6 @@ func (TCPJoinHandler) InWorkConn(logger *slog.Logger, workStream net.Conn, start
 		localAddr, err = LocalAddrFromPayload(cfg.LocalServicePayload)
 		if err != nil {
 			logger.Warn("resolve local service payload failed",
-				"proxy_id", start.ProxyID,
 				"endpoint_id", start.EndpointID,
 				"err", err,
 			)
@@ -40,7 +39,6 @@ func (TCPJoinHandler) InWorkConn(logger *slog.Logger, workStream net.Conn, start
 	if err != nil {
 		logger.Warn("dial local address failed",
 			"stage", "local_dial",
-			"proxy_id", start.ProxyID,
 			"endpoint_id", start.EndpointID,
 			"local_addr", localAddr,
 			"err", err,
@@ -49,14 +47,12 @@ func (TCPJoinHandler) InWorkConn(logger *slog.Logger, workStream net.Conn, start
 	}
 
 	logger.Debug("work conn started",
-		"proxy_id", start.ProxyID,
 		"endpoint_id", start.EndpointID,
 		"local_addr", localAddr,
 	)
 
 	inCount, outCount, _ := stream.Join(workStream, localConn)
 	logger.Debug("work conn closed",
-		"proxy_id", start.ProxyID,
 		"endpoint_id", start.EndpointID,
 		"bytes_in", inCount,
 		"bytes_out", outCount,

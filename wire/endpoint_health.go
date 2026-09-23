@@ -5,7 +5,6 @@ package wire
 // both surface here — one health model.
 type EndpointHealth struct {
 	EndpointID string `json:"endpoint_id"`
-	ProxyID    string `json:"proxy_id"`
 	Healthy    bool   `json:"healthy"`
 	Reason     string `json:"reason,omitempty"`
 	ErrorCode  string `json:"error_code,omitempty"`

@@ -475,7 +475,6 @@ func (ctl *Control) acceptWorkStreams(ctx context.Context) {
 			// Info：证明 Edge 的 StartWorkConn 已到达本机（与 Edge stage 对表用）。
 			ctl.logger.Info("start_work_conn received",
 				"stage", "start_work_recv",
-				"proxy_id", start.ProxyID,
 				"endpoint_id", start.EndpointID,
 			)
 			if !ctl.endpointMgr.HandleWorkConn(ctl.logger, stream, start) {

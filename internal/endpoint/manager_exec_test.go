@@ -26,8 +26,7 @@ func TestManagerWiresExecBridge(t *testing.T) {
 
 	mgr.HandleNewEndpoint(sdklog.Nop(), &wire.NewEndpoint{
 		EndpointID:          "ep-exec",
-		ProxyID:             "px-1",
-		ProxyType:           "mcp",
+		Category:            "mcp",
 		Protocol:            "https",
 		LocalServicePayload: json.RawMessage(`{"delivery":"exec","command":"echo","args":["hi"]}`),
 	})
@@ -46,7 +45,7 @@ func TestManagerWiresExecBridge(t *testing.T) {
 		t.Fatal("expected runtime bridge to be set for exec endpoint")
 	}
 
-	mgr.HandleCloseEndpoint(sdklog.Nop(), &wire.CloseEndpoint{EndpointID: "ep-exec", ProxyID: "px-1"})
+	mgr.HandleCloseEndpoint(sdklog.Nop(), &wire.CloseEndpoint{EndpointID: "ep-exec"})
 	if mgr.Len() != 0 {
 		t.Fatalf("Len() = %d after close", mgr.Len())
 	}
@@ -97,8 +96,7 @@ for line in sys.stdin:
 	})
 	mgr.HandleNewEndpoint(sdklog.Nop(), &wire.NewEndpoint{
 		EndpointID:          "ep-py",
-		ProxyID:             "px-1",
-		ProxyType:           "mcp",
+		Category:            "mcp",
 		Protocol:            "https",
 		LocalServicePayload: payload,
 	})
@@ -109,7 +107,6 @@ for line in sys.stdin:
 	go func() {
 		_ = mgr.HandleWorkConn(sdklog.Nop(), server, &wire.StartWorkConn{
 			EndpointID: "ep-py",
-			ProxyID:    "px-1",
 		})
 	}()
 

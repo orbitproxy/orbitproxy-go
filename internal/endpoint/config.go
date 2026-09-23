@@ -9,10 +9,8 @@ import (
 // Config is a local endpoint configuration snapshot from NewEndpoint.
 type Config struct {
 	EndpointID            string
-	ProxyID               string
-	ProxyType             string
+	Category              string
 	Protocol              string
-	PubHost               string
 	Delivery              string
 	LocalAddr             string
 	LocalServicePayload   json.RawMessage
@@ -29,10 +27,8 @@ func configFromNewEndpoint(in *wire.NewEndpoint) *Config {
 	p := parseLocalServicePayload(in.LocalServicePayload)
 	return &Config{
 		EndpointID:            in.EndpointID,
-		ProxyID:               in.ProxyID,
-		ProxyType:             in.ProxyType,
+		Category:              in.Category,
 		Protocol:              in.Protocol,
-		PubHost:               in.PubHost,
 		Delivery:              ResolveDelivery(in.LocalServicePayload),
 		LocalAddr:             p.LocalAddr,
 		LocalServicePayload:   in.LocalServicePayload,
