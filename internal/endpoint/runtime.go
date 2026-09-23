@@ -104,13 +104,12 @@ func (rt *Runtime) Close() {
 	}
 }
 
-// ReportUnhealthy is a convenience wrapper for dial/passive failures with only a reason string.
+// ReportUnhealthy records a dial failure. 单次拨号失败不改健康位，健康只由探针更新。
 func (rt *Runtime) ReportUnhealthy(reason string) {
 	rt.MarkUnhealthy(health.Unhealthy("dial_failed", reason, "dial"))
 }
 
-// MarkUnhealthy applies a health observation (active probe or passive event) and reports EndpointHealth.
-// Exec MCP process death and forward dial failures both land here — one health model.
+// MarkUnhealthy applies a health observation. 只有探针来源会上报 EndpointHealth。
 func (rt *Runtime) MarkUnhealthy(obs health.Observation) {
 	obs.Healthy = false
 	if obs.ObservedAt.IsZero() {
@@ -130,21 +129,8 @@ func (rt *Runtime) reportHealth(obs health.Observation) {
 	sendHealth := rt.sendHealth
 	rt.mu.RUnlock()
 
-	if cfg == nil || sendHealth == nil {
+	if cfg == nil || sendHealth == nil || !cfg.HealthEnabled || !probeHealthSource(obs.Source) {
 		return
-	}
-	// Active probe / dial updates respect HealthEnabled.
-	// Passive process observations always report unhealthy: for exec MCP that
-	// IS the health strategy (no ActiveProbe), even when the UI toggle is off.
-	switch obs.Source {
-	case "probe", "dial":
-		if !cfg.HealthEnabled {
-			return
-		}
-	default:
-		if obs.Healthy && !cfg.HealthEnabled {
-			return
-		}
 	}
 	msg := &wire.EndpointHealth{
 		EndpointID: cfg.EndpointID,
@@ -159,6 +145,16 @@ func (rt *Runtime) reportHealth(obs health.Observation) {
 	_ = sendHealth(msg)
 }
 
+// probeHealthSource 只承认探针。进程退出、单次拨号失败不能改健康位。
+func probeHealthSource(source string) bool {
+	switch source {
+	case "probe", "tcp", "mcp_http_ping", "mcp_stdio_ping":
+		return true
+	default:
+		return false
+	}
+}
+
 func (rt *Runtime) restartMonitorLocked() {
 	rt.stopMonitorLocked()
 	if rt.cfg == nil || !rt.cfg.HealthEnabled || rt.ctx == nil {
@@ -170,8 +166,7 @@ func (rt *Runtime) restartMonitorLocked() {
 		return
 	}
 
-	// Active probe is optional. Exec MCP often has nil probe and relies on
-	// passive MarkUnhealthy from process observation.
+	// 没有探针就不改健康位。进程退出不能代替探针。
 	probe := rt.selectProbeLocked()
 	if probe == nil {
 		return
@@ -199,7 +194,6 @@ func (rt *Runtime) restartMonitorLocked() {
 func (rt *Runtime) selectProbeLocked() health.Probe {
 	switch rt.cfg.Delivery {
 	case DeliveryExec:
-		// exec/stdio：被动监听子进程即可，不强制 ActiveProbe。
 		return nil
 	default:
 		if rt.cfg.LocalAddr == "" {

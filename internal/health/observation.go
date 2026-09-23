@@ -2,9 +2,7 @@ package health
 
 import "time"
 
-// Observation is one health signal — from an active probe failure/success or a
-// passive runtime event (process exit, dial error, etc.).
-// Product-wise this is still "health check", not a separate diagnostic product.
+// Observation 是一次健康信号。只有探针来源会改 endpoint 健康位。
 type Observation struct {
 	Healthy bool
 

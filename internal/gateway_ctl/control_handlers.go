@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/orbitproxy/orbitproxy-go/internal/gateway_ctl/dispatcher"
-	"github.com/orbitproxy/orbitproxy-go/internal/health"
 	"github.com/orbitproxy/orbitproxy-go/internal/mcp/discover"
 	"github.com/orbitproxy/orbitproxy-go/internal/mcp/mcpstdio"
 	"github.com/orbitproxy/orbitproxy-go/internal/mcp/preflight"
@@ -255,31 +254,9 @@ func (ctl *Control) runPreflight(in *wire.Preflight) {
 	}
 }
 
-// reportEndpointDiagnostic handles a passive health observation from mcpstdio
-// (process exit / handshake failure). Primary effect: mark endpoint unhealthy.
-// EndpointDiagnostic is still sent as optional evidence for richer stderr/exit details.
+// reportEndpointDiagnostic 只上报进程退出证据。健康位由探针决定，这里不改。
 func (ctl *Control) reportEndpointDiagnostic(diag mcpstdio.Diagnostic) {
-	if ctl == nil {
-		return
-	}
-
-	obs := health.Observation{
-		Healthy:    false,
-		Code:       diag.Code,
-		Message:    diag.Message,
-		ExitCode:   diag.ExitCode,
-		StderrTail: string(diag.StderrTail),
-		Source:     "process",
-		ObservedAt: diag.OccurredAt,
-	}
-	if obs.ObservedAt.IsZero() {
-		obs.ObservedAt = time.Now()
-	}
-	if rt, ok := ctl.endpointMgr.Get(diag.EndpointID); ok && rt != nil {
-		rt.MarkUnhealthy(obs)
-	}
-
-	if ctl.msgDispatcher == nil {
+	if ctl == nil || ctl.msgDispatcher == nil {
 		return
 	}
 	msg := wire.EndpointDiagnostic{

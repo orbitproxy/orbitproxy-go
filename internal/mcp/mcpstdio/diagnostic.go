@@ -27,9 +27,7 @@ const (
 // 启动后存活时长阈值，低于此值判定为启动失败（而非运行时故障）
 const startupSurvivalThreshold = 2 * time.Second
 
-// Diagnostic is structured evidence for a passive health observation
-// (process exit / handshake failure). Callers should treat it as input to
-// the unified health model (MarkUnhealthy), not a separate product concept.
+// Diagnostic 是进程退出或握手失败的证据。它不改 endpoint 健康位，健康只由探针判定。
 type Diagnostic struct {
 	EndpointID string            `json:"endpoint_id"`
 	Code       string            `json:"code"`

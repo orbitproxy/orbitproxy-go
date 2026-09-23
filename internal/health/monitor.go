@@ -6,9 +6,7 @@ import (
 )
 
 // Monitor runs optional ActiveProbe checks on an interval.
-// Passive observations are applied by the endpoint Runtime via MarkUnhealthy /
-// MarkHealthy — they do not need a Monitor, but when a Monitor exists it shares
-// the same health callbacks.
+// 健康位只由这里的探针回调更新。进程退出和单次拨号失败不进入这个判定。
 type Monitor struct {
 	interval       time.Duration
 	timeout        time.Duration

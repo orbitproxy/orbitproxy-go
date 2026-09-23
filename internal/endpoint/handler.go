@@ -45,9 +45,6 @@ func (TCPJoinHandler) InWorkConn(logger *slog.Logger, workStream net.Conn, start
 			"local_addr", localAddr,
 			"err", err,
 		)
-		if cfg.HealthEnabled {
-			rt.ReportUnhealthy(err.Error())
-		}
 		return
 	}
 
