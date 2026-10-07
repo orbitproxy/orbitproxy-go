@@ -22,6 +22,8 @@ const (
 	MessageTypeRestart             MessageType = "restart"
 	MessageTypeUpdate              MessageType = "update"
 	MessageTypeLifecycleResult     MessageType = "lifecycle_result"
+	MessageTypeDataHello           MessageType = "data_hello"
+	MessageTypeDataHelloAck        MessageType = "data_hello_ack"
 )
 
 // Wire type bytes (single-byte discriminators). Stable protocol surface.
@@ -44,6 +46,8 @@ const (
 	TypeRestart             byte = 'x'
 	TypeUpdate              byte = 'u'
 	TypeLifecycleResult     byte = 'L'
+	TypeDataHello           byte = 'a'
+	TypeDataHelloAck        byte = 'A'
 )
 
 // Message is implemented by every control-plane payload.
@@ -70,6 +74,8 @@ var byteTypeMap = map[byte]MessageType{
 	TypeRestart:             MessageTypeRestart,
 	TypeUpdate:              MessageTypeUpdate,
 	TypeLifecycleResult:     MessageTypeLifecycleResult,
+	TypeDataHello:           MessageTypeDataHello,
+	TypeDataHelloAck:        MessageTypeDataHelloAck,
 }
 
 // MessageTypeFromByte maps a wire type byte to its logical name.

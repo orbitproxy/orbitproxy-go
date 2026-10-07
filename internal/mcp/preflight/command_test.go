@@ -104,21 +104,32 @@ func TestCheckCommandNpxBinaryMissingReportsPackage(t *testing.T) {
 	}
 }
 
+// ClassifyError 只按错误类型取码；CommandResult.Err 负责把静态检查结果转成类型化错误。
 func TestClassifyError(t *testing.T) {
 	cases := []struct {
+		name string
 		err  error
 		want string
 	}{
-		{fmt.Errorf("preflight: env_file_missing: environment variable file not found: /tmp/x.env"), CodeEnvFileMissing},
-		{fmt.Errorf("preflight: package_not_installed: MCP package not installed locally: @foo/bar"), CodePackageNotInstalled},
-		{fmt.Errorf("preflight: command_not_found: command not found in PATH: echo"), CodeCommandNotFound},
-		{fmt.Errorf("preflight: dial failed: connection refused"), "dial_failed"},
+		{"command result env", (&CommandResult{ErrorCode: CodeEnvFileMissing, ErrorMessage: "x"}).Err(), CodeEnvFileMissing},
+		{"command result package", (&CommandResult{ErrorCode: CodePackageNotInstalled, ErrorMessage: "x"}).Err(), CodePackageNotInstalled},
+		{"wrapped", fmt.Errorf("preflight: %w", (&CommandResult{ErrorCode: CodeCommandNotFound, ErrorMessage: "x"}).Err()), CodeCommandNotFound},
+		{"text is not sniffed", fmt.Errorf("preflight: env_file_missing: dial failed: connection refused"), "internal"},
+		{"ok result has no error", (&CommandResult{OK: true}).Err(), ""},
 	}
 	for _, tc := range cases {
-		got, _ := ClassifyError(tc.err)
-		if got != tc.want {
-			t.Errorf("ClassifyError(%q) = %q, want %q", tc.err, got, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.err == nil {
+				if tc.want != "" {
+					t.Fatalf("expected error for %s", tc.name)
+				}
+				return
+			}
+			got, _ := ClassifyError(tc.err)
+			if got != tc.want {
+				t.Errorf("ClassifyError(%q) = %q, want %q", tc.err, got, tc.want)
+			}
+		})
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hashicorp/yamux"
 	"github.com/orbitproxy/orbitproxy-go/internal/gateway_ctl/dispatcher"
 	"github.com/orbitproxy/orbitproxy-go/internal/mcp/discover"
 	"github.com/orbitproxy/orbitproxy-go/internal/mcp/mcpstdio"
@@ -221,7 +222,7 @@ func (ctl *Control) runPreflight(in *wire.Preflight) {
 		EndpointID:     endpointID,
 		MachineDir:     ctl.machineDir(),
 		OnDiag:         ctl.reportEndpointDiagnostic,
-		SkipProtocol:   in.SkipProtocol || preflight.FamilyKeyFromPayload(rt.Config().LocalServicePayload) != "",
+		SkipProtocol:   in.SkipProtocol,
 	})
 	if err != nil {
 		result.Status = "failed"
@@ -439,8 +440,7 @@ func (ctl *Control) ackLifecycle(requestID, status, errorCode, errorMessage, ver
 }
 
 // acceptWorkStreams 接收 Edge 主动打开的 yamux work stream，读取 StartWorkConn 后路由到对应 endpoint。
-func (ctl *Control) acceptWorkStreams(ctx context.Context) {
-	yamuxSession := ctl.sessionCtx.Yamux
+func (ctl *Control) acceptWorkStreams(ctx context.Context, yamuxSession *yamux.Session) {
 	if yamuxSession == nil {
 		return
 	}

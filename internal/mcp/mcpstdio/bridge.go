@@ -3,15 +3,19 @@ package mcpstdio
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
+	"sort"
 	"strings"
+	"syscall"
 
-	"log/slog"
-
+	"github.com/orbitproxy/orbitproxy-go/internal/mcp/mcperr"
 	"github.com/orbitproxy/orbitproxy-go/internal/mcp/toolschema"
 )
 
@@ -214,27 +218,30 @@ func isLimitError(err error) bool {
 }
 
 func isTimeoutError(err error) bool {
-	msg := err.Error()
-	return strings.Contains(msg, "timeout") || strings.Contains(msg, "deadline")
+	if errors.Is(err, context.DeadlineExceeded) || mcperr.CodeOf(err) == mcperr.CodeTimeout {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
+// isDeadSessionError 报告该错误是否意味着子进程已经不可用，需要让 pool 作废会话。
 func isDeadSessionError(err error) bool {
 	if err == nil {
 		return false
 	}
-	msg := err.Error()
-	return strings.Contains(msg, "broken pipe") ||
-		strings.Contains(msg, "subprocess exited") ||
-		strings.Contains(msg, "subprocess already exited") ||
-		strings.Contains(msg, "write stdin:") ||
-		strings.Contains(msg, "exit_code=")
+	if mcperr.IsProcessExit(err) {
+		return true
+	}
+	return errors.Is(err, syscall.EPIPE) || errors.Is(err, io.ErrClosedPipe)
 }
 
 func isExitedOnStartError(err error) bool {
-	if err == nil {
-		return false
+	switch mcperr.CodeOf(err) {
+	case mcperr.CodeExitedOnStart, mcperr.CodeExitedAfterHandshake:
+		return true
 	}
-	return strings.Contains(err.Error(), "shortly after MCP handshake")
+	return false
 }
 
 // ----------------------------------------------------------------
@@ -242,14 +249,17 @@ func isExitedOnStartError(err error) bool {
 // ----------------------------------------------------------------
 
 // ParseExecPayload 从 endpoint 的 local_service_payload 解析 exec 配置。
+// family_key / requires_env_file / preflight_env 由控制面按 catalog 元数据下发，缺省即「无特殊要求」。
 func ParseExecPayload(raw json.RawMessage) (*SpawnConfig, error) {
 	var payload struct {
-		Delivery       string   `json:"delivery"`
-		Command        string   `json:"command"`
-		Args           []string `json:"args"`
-		WorkDir        string   `json:"workDir"`
-		EnvPassthrough []string `json:"envPassthrough"`
-		FamilyKey      string   `json:"family_key"`
+		Delivery        string            `json:"delivery"`
+		Command         string            `json:"command"`
+		Args            []string          `json:"args"`
+		WorkDir         string            `json:"workDir"`
+		EnvPassthrough  []string          `json:"envPassthrough"`
+		FamilyKey       string            `json:"family_key"`
+		RequiresEnvFile bool              `json:"requires_env_file"`
+		PreflightEnv    map[string]string `json:"preflight_env"`
 	}
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return nil, fmt.Errorf("decode exec payload: %w", err)
@@ -258,10 +268,32 @@ func ParseExecPayload(raw json.RawMessage) (*SpawnConfig, error) {
 		return nil, fmt.Errorf("exec payload: command is required")
 	}
 	return &SpawnConfig{
-		Command:        payload.Command,
-		Args:           applyFilesystemOpenRoot(payload.FamilyKey, payload.Args),
-		WorkDir:        payload.WorkDir,
-		EnvPassthrough: payload.EnvPassthrough,
-		FamilyKey:      payload.FamilyKey,
+		Command:         payload.Command,
+		Args:            applyFilesystemOpenRoot(payload.FamilyKey, payload.Args),
+		WorkDir:         payload.WorkDir,
+		EnvPassthrough:  payload.EnvPassthrough,
+		FamilyKey:       payload.FamilyKey,
+		RequiresEnvFile: payload.RequiresEnvFile,
+		PreflightEnv:    envPairsFromMap(payload.PreflightEnv),
 	}, nil
+}
+
+// envPairsFromMap 把 {KEY: VALUE} 转成按键名排序的 KEY=VALUE 列表，保证输出稳定。
+func envPairsFromMap(values map[string]string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		if key == "" {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	out := make([]string, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, key+"="+values[key])
+	}
+	return out
 }

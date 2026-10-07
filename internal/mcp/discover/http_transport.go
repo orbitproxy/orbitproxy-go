@@ -4,11 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/orbitproxy/orbitproxy-go/internal/mcp/mcperr"
 )
 
 // HTTPTransport 是基于 HTTP POST 的 MCP JSON-RPC 传输层。
@@ -55,13 +59,13 @@ func (t *HTTPTransport) Send(ctx context.Context, request json.RawMessage) (json
 
 	resp, err := t.Client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("dial failed: %w", err)
+		return nil, classifyHTTPError(t.URL, err)
 	}
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 	if err != nil {
-		return nil, err
+		return nil, mcperr.Wrap(mcperr.StageDial, mcperr.CodeDialFailed, "read response from "+t.URL+": "+err.Error(), err)
 	}
 
 	// 更新 session ID
@@ -72,7 +76,8 @@ func (t *HTTPTransport) Send(ctx context.Context, request json.RawMessage) (json
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("http %d: %s", resp.StatusCode, truncate(string(raw), 200))
+		return nil, mcperr.New(mcperr.StageDial, mcperr.CodeHTTPStatus,
+			fmt.Sprintf("http %d from %s: %s", resp.StatusCode, t.URL, truncate(string(raw), 200)))
 	}
 
 	if len(raw) == 0 {
@@ -91,4 +96,13 @@ func (t *HTTPTransport) Send(ctx context.Context, request json.RawMessage) (json
 // Close 释放 HTTP 传输层资源（HTTP 无状态，无需清理）。
 func (t *HTTPTransport) Close() error {
 	return nil
+}
+
+// classifyHTTPError 把 http.Client.Do 的错误归到 dial 阶段：超时 → timeout，其余 → dial_failed。
+func classifyHTTPError(url string, err error) error {
+	var netErr net.Error
+	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) {
+		return mcperr.Wrap(mcperr.StageDial, mcperr.CodeTimeout, "request to "+url+" timed out", err)
+	}
+	return mcperr.Wrap(mcperr.StageDial, mcperr.CodeDialFailed, "dial "+url+" failed: "+err.Error(), err)
 }

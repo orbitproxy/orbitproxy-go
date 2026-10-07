@@ -4,24 +4,26 @@ import (
 	"regexp"
 	"sync"
 	"time"
+
+	"github.com/orbitproxy/orbitproxy-go/internal/mcp/mcperr"
 )
 
 // ----------------------------------------------------------------
-// 错误码常量——稳定契约，只增不改
-// Machine 上报错误码，控制面渲染人话和修复指引
+// 错误码常量——稳定契约，只增不改，定义集中在 mcperr，这里保留别名
 // ----------------------------------------------------------------
 
 const (
-	CodeCommandNotFound      = "command_not_found"
-	CodeCommandNotExecutable = "command_not_executable"
-	CodeSpawnFailed          = "spawn_failed"
-	CodeExitedOnStart        = "exited_on_start"        // 启动后 2s 内退出
-	CodeHandshakeTimeout     = "handshake_timeout"
-	CodeHandshakeRejected    = "handshake_rejected"
-	CodeExitedAtRuntime      = "exited_at_runtime"       // 运行中退出
-	CodePingTimeout          = "ping_timeout"
-	CodeConcurrencyLimit     = "concurrency_limit"
-	CodeInternal             = "internal"
+	CodeCommandNotFound      = mcperr.CodeCommandNotFound
+	CodeCommandNotExecutable = mcperr.CodeCommandNotExecutable
+	CodeSpawnFailed          = mcperr.CodeSpawnFailed
+	CodeExitedOnStart        = mcperr.CodeExitedOnStart        // 握手完成前退出
+	CodeExitedAfterHandshake = mcperr.CodeExitedAfterHandshake // 握手成功后存活窗内退出
+	CodeHandshakeTimeout     = mcperr.CodeHandshakeTimeout
+	CodeHandshakeRejected    = mcperr.CodeHandshakeRejected
+	CodeExitedAtRuntime      = mcperr.CodeExitedAtRuntime // 运行中退出
+	CodePingTimeout          = mcperr.CodePingTimeout
+	CodeConcurrencyLimit     = mcperr.CodeConcurrencyLimit
+	CodeInternal             = mcperr.CodeInternal
 )
 
 // 启动后存活时长阈值，低于此值判定为启动失败（而非运行时故障）
@@ -118,6 +120,12 @@ func NewStderrBuffer() *StderrBuffer {
 		buf: make([]byte, stderrBufSize),
 	}
 }
+
+// TailBuffer 是通用的「只保留尾部」环形缓冲，与 StderrBuffer 同实现；用于 stdout 噪声等非 stderr 用途。
+type TailBuffer = StderrBuffer
+
+// NewTailBuffer 创建 4KB 的尾部环形缓冲。
+func NewTailBuffer() *TailBuffer { return NewStderrBuffer() }
 
 // Write 实现 io.Writer，将 stderr 输出写入环形缓冲。
 func (sb *StderrBuffer) Write(p []byte) (n int, err error) {

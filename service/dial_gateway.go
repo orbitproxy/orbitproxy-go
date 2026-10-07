@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"net"
 	"strings"
 	"time"
 
+	"github.com/hashicorp/yamux"
 	"github.com/orbitproxy/orbitproxy-go/internal/backoff"
 	"github.com/orbitproxy/orbitproxy-go/internal/gateway_ctl"
 	"github.com/orbitproxy/orbitproxy-go/internal/yamuxcfg"
@@ -17,24 +19,17 @@ import (
 
 const defaultHelloTimeout = 15 * time.Second
 
-// dialGateway dials edge: TCP → TLS → yamux → signed ClientHello → ServerHello.
-func (svr *Service) dialGateway(ctx context.Context) (*gateway_ctl.SessionContext, error) {
-	dialer := &net.Dialer{
-		// TCP probes help NAT/proxy paths stay alive.
-		KeepAliveConfig: net.KeepAliveConfig{
-			Enable: true,
-			Idle:   30 * time.Second,
-		},
-	}
+// dialEdge opens TCP → TLS → yamux. Control and data sessions both use it.
+func (svr *Service) dialEdge(ctx context.Context) (net.Conn, *yamux.Session, error) {
+	dialer := &net.Dialer{KeepAliveConfig: edgeKeepAlive()}
 	rawConn, err := dialer.DialContext(ctx, "tcp", svr.cfg.EdgeAddr)
 	if err != nil {
-		return nil, fmt.Errorf("dial edge %s: %w", svr.cfg.EdgeAddr, err)
+		return nil, nil, fmt.Errorf("dial edge %s: %w", svr.cfg.EdgeAddr, err)
 	}
-
 	host, _, err := net.SplitHostPort(svr.cfg.EdgeAddr)
 	if err != nil {
 		_ = rawConn.Close()
-		return nil, fmt.Errorf("parse edge_addr %q: %w", svr.cfg.EdgeAddr, err)
+		return nil, nil, fmt.Errorf("parse edge_addr %q: %w", svr.cfg.EdgeAddr, err)
 	}
 	tlsCfg := &tls.Config{
 		ServerName:         host,
@@ -45,20 +40,32 @@ func (svr *Service) dialGateway(ctx context.Context) (*gateway_ctl.SessionContex
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM([]byte(strings.TrimSpace(svr.cfg.MachineCACert))) {
 			_ = rawConn.Close()
-			return nil, fmt.Errorf("invalid machine CA certificate")
+			return nil, nil, fmt.Errorf("invalid machine CA certificate")
 		}
 		tlsCfg.RootCAs = pool
 	}
 	tlsConn := tls.Client(rawConn, tlsCfg)
 	if err := tlsConn.HandshakeContext(ctx); err != nil {
 		_ = tlsConn.Close()
-		return nil, fmt.Errorf("tls handshake with edge: %w", err)
+		return nil, nil, fmt.Errorf("tls handshake with edge: %w", err)
 	}
-
 	yamuxSession, err := yamuxcfg.Client(tlsConn)
 	if err != nil {
 		_ = tlsConn.Close()
-		return nil, fmt.Errorf("open yamux session: %w", err)
+		return nil, nil, fmt.Errorf("open yamux session: %w", err)
+	}
+	return tlsConn, yamuxSession, nil
+}
+
+func edgeKeepAlive() net.KeepAliveConfig {
+	return net.KeepAliveConfig{Enable: true, Idle: 30 * time.Second}
+}
+
+// dialGateway dials edge: TCP → TLS → yamux → signed ClientHello → ServerHello.
+func (svr *Service) dialGateway(ctx context.Context) (*gateway_ctl.SessionContext, error) {
+	_, yamuxSession, err := svr.dialEdge(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	controlStream, err := yamuxSession.Open()
@@ -83,6 +90,7 @@ func (svr *Service) dialGateway(ctx context.Context) (*gateway_ctl.SessionContex
 	if err != nil {
 		return nil, err
 	}
+	logClientHello(svr, hello)
 	if err := wire.WriteMsg(controlStream, hello); err != nil {
 		return nil, fmt.Errorf("send client hello: %w", err)
 	}
@@ -101,7 +109,7 @@ func (svr *Service) dialGateway(ctx context.Context) (*gateway_ctl.SessionContex
 	return &gateway_ctl.SessionContext{
 		ConnConfig: gateway_ctl.ConnConfig{
 			EdgeAddr:      svr.cfg.EdgeAddr,
-			MachineKey:     svr.cfg.MachineKey,
+			MachineKey:    svr.cfg.MachineKey,
 			PrivateKeyPEM: svr.cfg.PrivateKeyPEM,
 			SoftVersion:   svr.cfg.SoftVersion,
 			DataRoot:      svr.cfg.DataRoot,
@@ -110,7 +118,31 @@ func (svr *Service) dialGateway(ctx context.Context) (*gateway_ctl.SessionContex
 		ControlStream: controlStream,
 		EdgeID:        helloResp.EdgeID,
 		SessionID:     helloResp.SessionID,
+		// 0 不拨。非 0 由 Control 按 index 拨数据会话。
+		DataSessions: helloResp.DataSessions,
+		DialEdge:     svr.dialEdge,
 	}, nil
+}
+
+func logClientHello(svr *Service, hello wire.ClientHello) {
+	reported := time.Unix(hello.Timestamp, 0)
+	logged := hello
+	logged.AuthSignature = ""
+	body, err := json.Marshal(logged)
+	if err != nil {
+		svr.logger.Info("client hello",
+			"machine_key", hello.MachineKey,
+			"timestamp", hello.Timestamp,
+			"reported_time", reported.Format(time.RFC3339),
+			"nonce", hello.Nonce,
+			"soft_version", hello.SoftVersion,
+		)
+		return
+	}
+	svr.logger.Info("client hello",
+		"reported_time", reported.Format(time.RFC3339),
+		"body", string(body),
+	)
 }
 
 func waitServerHello(ctx context.Context, controlStream net.Conn) (*wire.ServerHello, error) {

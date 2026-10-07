@@ -10,16 +10,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/orbitproxy/orbitproxy-go/internal/mcp/mcperr"
 	"github.com/orbitproxy/orbitproxy-go/internal/userenv"
 )
 
-// Command error codes (aligned with execbridge / wire exec_preflight).
+// Command error codes (aligned with execbridge / wire exec_preflight). 定义集中在 mcperr。
 const (
-	CodeCommandNotFound      = "command_not_found"
-	CodeCommandNotExecutable = "command_not_executable"
-	CodeSpawnFailed          = "spawn_failed"
-	CodePackageNotInstalled  = "package_not_installed"
-	CodeEnvFileMissing       = "env_file_missing"
+	CodeCommandNotFound      = mcperr.CodeCommandNotFound
+	CodeCommandNotExecutable = mcperr.CodeCommandNotExecutable
+	CodeSpawnFailed          = mcperr.CodeSpawnFailed
+	CodePackageNotInstalled  = mcperr.CodePackageNotInstalled
+	CodeEnvFileMissing       = mcperr.CodeEnvFileMissing
 )
 
 // CommandConfig is the static exec command check input (no process start).
@@ -35,6 +36,21 @@ type CommandResult struct {
 	ErrorCode    string `json:"error_code,omitempty"`
 	ErrorMessage string `json:"error_message,omitempty"`
 	ResolvedPath string `json:"resolved_path,omitempty"`
+}
+
+// Err 把失败的 CommandResult 转成类型化错误；OK 时返回 nil。
+func (r *CommandResult) Err() error {
+	if r == nil || r.OK {
+		return nil
+	}
+	stage := mcperr.StageCommand
+	switch r.ErrorCode {
+	case CodePackageNotInstalled:
+		stage = mcperr.StagePackage
+	case CodeSpawnFailed:
+		stage = mcperr.StageSpawn
+	}
+	return mcperr.New(stage, r.ErrorCode, r.ErrorMessage)
 }
 
 // CheckCommand verifies the command is on PATH / executable and workdir exists.

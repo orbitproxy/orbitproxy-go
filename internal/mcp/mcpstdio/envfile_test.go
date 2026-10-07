@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/orbitproxy/orbitproxy-go/internal/mcp/mcperr"
 )
 
 func TestReadEnvFileMissing(t *testing.T) {
@@ -89,29 +92,12 @@ func TestEndpointEnvFileReady(t *testing.T) {
 	}
 }
 
-func TestRequiresEndpointEnvFile(t *testing.T) {
-	t.Parallel()
-	if !RequiresEndpointEnvFile("mysql", nil) {
-		t.Fatal("family_key mysql must require env file")
-	}
-	if !RequiresEndpointEnvFile("MySQL", nil) {
-		t.Fatal("family_key is case-insensitive")
-	}
-	if !RequiresEndpointEnvFile("", []string{"--no-install", "@benborla29/mcp-server-mysql@2.0.9"}) {
-		t.Fatal("mysql package args must require env file")
-	}
-	if RequiresEndpointEnvFile("filesystem", []string{"--no-install", "@modelcontextprotocol/server-filesystem", "/"}) {
-		t.Fatal("filesystem must not require env file")
-	}
-}
-
-func TestNewSessionMysqlMissingEnvFile(t *testing.T) {
+func TestNewSessionRequiresEnvFileMissing(t *testing.T) {
 	t.Parallel()
 	_, err := NewSession(SessionConfig{
 		SpawnConfig: SpawnConfig{
-			Command:   "/bin/true",
-			Args:      []string{"--no-install", "@benborla29/mcp-server-mysql@2.0.9"},
-			FamilyKey: "mysql",
+			Command:         "/bin/true",
+			RequiresEnvFile: true,
 		},
 		EndpointID: "mep_missing",
 		MachineDir: t.TempDir(),
@@ -119,11 +105,28 @@ func TestNewSessionMysqlMissingEnvFile(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected env_file_missing before spawn")
 	}
-	if !strings.Contains(err.Error(), CodeEnvFileMissing) {
-		t.Fatalf("err = %v, want %s", err, CodeEnvFileMissing)
+	if code := mcperr.CodeOf(err); code != CodeEnvFileMissing {
+		t.Fatalf("code = %q, want %s (%v)", code, CodeEnvFileMissing, err)
 	}
 	if !strings.Contains(err.Error(), "environment variable file not found") {
 		t.Fatalf("err = %v, want environment variable file not found", err)
+	}
+}
+
+// 不要求环境文件时，不应因文件缺失而拒绝启动；这里用一个立即退出的命令，预期落到握手阶段而非 prerequisite。
+func TestNewSessionEnvFileNotRequiredSkipsCheck(t *testing.T) {
+	t.Parallel()
+	_, err := NewSession(SessionConfig{
+		SpawnConfig:      SpawnConfig{Command: "/bin/true"},
+		EndpointID:       "mep_plain",
+		MachineDir:       t.TempDir(),
+		HandshakeTimeout: 2 * time.Second,
+	})
+	if err == nil {
+		t.Fatal("expected failure from /bin/true exiting")
+	}
+	if code := mcperr.CodeOf(err); code == CodeEnvFileMissing {
+		t.Fatalf("env file must not be required: %v", err)
 	}
 }
 

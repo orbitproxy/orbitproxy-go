@@ -3,12 +3,14 @@ package mcpstdio
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/orbitproxy/orbitproxy-go/internal/mcp/mcperr"
 )
 
 // postHandshakeSettle is how long we require the subprocess to stay alive
@@ -35,6 +37,7 @@ type Session struct {
 	reader        *Reader
 	pending       *PendingMap
 	stderrBuf     *StderrBuffer
+	stdoutNoise   *TailBuffer // stdout 上的非 JSON-RPC 行（服务端误把日志打到 stdout）
 	cfg           SessionConfig
 	lastActivity  atomic.Int64 // UnixNano，用于空闲超时判断
 	closed        atomic.Bool
@@ -59,7 +62,7 @@ func NewSession(cfg SessionConfig) (*Session, error) {
 		cfg.RequestTimeout = 30 * time.Second
 	}
 
-	if RequiresEndpointEnvFile(cfg.FamilyKey, cfg.Args) && !EndpointEnvFileReady(cfg.MachineDir, cfg.EndpointID) {
+	if cfg.RequiresEnvFile && !EndpointEnvFileReady(cfg.MachineDir, cfg.EndpointID) {
 		return nil, EnvFileMissingError(cfg.MachineDir, cfg.EndpointID)
 	}
 
@@ -76,13 +79,14 @@ func NewSession(cfg SessionConfig) (*Session, error) {
 	}
 
 	s := &Session{
-		proc:      proc,
-		writer:    NewWriter(proc.Stdin),
-		reader:    NewReader(proc.Stdout),
-		pending:   NewPendingMap(),
-		stderrBuf: NewStderrBuffer(),
-		cfg:       cfg,
-		exitCh:    make(chan struct{}),
+		proc:        proc,
+		writer:      NewWriter(proc.Stdin),
+		reader:      NewReader(proc.Stdout),
+		pending:     NewPendingMap(),
+		stderrBuf:   NewStderrBuffer(),
+		stdoutNoise: NewTailBuffer(),
+		cfg:         cfg,
+		exitCh:      make(chan struct{}),
 	}
 	s.touchActivity()
 
@@ -99,16 +103,14 @@ func NewSession(cfg SessionConfig) (*Session, error) {
 		// 握手失败仍要正常关闭子进程
 		_ = s.Close()
 
-		// 上报诊断
+		// 上报诊断：码与返回给调用方的错误保持一致
 		if cfg.DiagCallback != nil {
 			diag := ClassifyExit(cfg.EndpointID, proc, err, s.stderrBuf)
-			if diag.Code == CodeExitedAtRuntime {
-				diag.Code = CodeHandshakeRejected
-				diag.Message = err.Error()
-			}
+			diag.Code = mcperr.CodeOf(err)
+			diag.Message = err.Error()
 			cfg.DiagCallback(diag)
 		}
-		return nil, fmt.Errorf("mcp handshake: %w", err)
+		return nil, err
 	}
 	s.handshakeDone = true
 
@@ -116,10 +118,8 @@ func NewSession(cfg SessionConfig) (*Session, error) {
 		_ = s.Close()
 		if cfg.DiagCallback != nil {
 			diag := ClassifyExit(cfg.EndpointID, proc, err, s.stderrBuf)
-			if diag.Code == CodeExitedAtRuntime {
-				diag.Code = CodeExitedOnStart
-				diag.Message = err.Error()
-			}
+			diag.Code = CodeExitedAfterHandshake
+			diag.Message = err.Error()
 			cfg.DiagCallback(diag)
 		}
 		return nil, err
@@ -134,7 +134,7 @@ func (s *Session) Call(ctx context.Context, msg *Message) (*Message, error) {
 		return nil, fmt.Errorf("session closed")
 	}
 	if !s.Alive() {
-		return nil, s.enrichDeadError(fmt.Errorf("subprocess already exited"))
+		return nil, s.processExitError("subprocess already exited")
 	}
 	s.touchActivity()
 
@@ -148,7 +148,7 @@ func (s *Session) Call(ctx context.Context, msg *Message) (*Message, error) {
 	}
 
 	if err := s.writer.Write(outMsg); err != nil {
-		return nil, s.enrichDeadError(fmt.Errorf("write stdin: %w", err))
+		return nil, s.processExitError("write stdin: " + err.Error())
 	}
 
 	select {
@@ -156,14 +156,14 @@ func (s *Session) Call(ctx context.Context, msg *Message) (*Message, error) {
 		if !ok {
 			// chan 被关闭：超时或会话关闭
 			if !s.Alive() {
-				return nil, s.enrichDeadError(fmt.Errorf("subprocess exited while waiting for response"))
+				return nil, s.processExitError("subprocess exited while waiting for response")
 			}
-			return nil, fmt.Errorf("request timeout or session closed")
+			return nil, mcperr.Wrap(mcperr.StageProtocol, mcperr.CodeTimeout, "request timeout or session closed", context.DeadlineExceeded)
 		}
 		s.touchActivity()
 		return resp, nil
 	case <-s.exitCh:
-		return nil, s.enrichDeadError(fmt.Errorf("subprocess exited while waiting for response"))
+		return nil, s.processExitError("subprocess exited while waiting for response")
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
@@ -175,11 +175,11 @@ func (s *Session) SendNotification(msg *Message) error {
 		return fmt.Errorf("session closed")
 	}
 	if !s.Alive() {
-		return s.enrichDeadError(fmt.Errorf("subprocess already exited"))
+		return s.processExitError("subprocess already exited")
 	}
 	s.touchActivity()
 	if err := s.writer.Write(msg); err != nil {
-		return s.enrichDeadError(err)
+		return s.processExitError("write stdin: " + err.Error())
 	}
 	return nil
 }
@@ -240,6 +240,14 @@ func (s *Session) StderrTail() []byte {
 	return s.stderrBuf.Tail()
 }
 
+// StdoutNoiseTail 返回 stdout 上出现过的非 JSON-RPC 行尾部。
+func (s *Session) StdoutNoiseTail() []byte {
+	if s.stdoutNoise == nil {
+		return nil
+	}
+	return s.stdoutNoise.Tail()
+}
+
 // ExitCode 在进程已退出时返回退出码。
 func (s *Session) ExitCode() *int {
 	if s.proc == nil {
@@ -248,22 +256,31 @@ func (s *Session) ExitCode() *int {
 	return s.proc.ExitCode()
 }
 
-// enrichDeadError 在进程已死时附带 exit code / stderr，便于请求侧排查。
-func (s *Session) enrichDeadError(err error) error {
-	if err == nil {
-		return nil
+// processExitError 构造「子进程已退出」错误并附带退出码 / stderr / stdout 证据。
+// 握手完成前的退出为 exited_on_start，之后为 exited_at_runtime；
+// 握手后存活窗内的退出由 waitSettled 单独标记为 exited_after_handshake。
+func (s *Session) processExitError(message string) *mcperr.Error {
+	code := CodeExitedAtRuntime
+	stage := mcperr.StageProtocol
+	if !s.handshakeDone {
+		code = CodeExitedOnStart
+		stage = mcperr.StageHandshake
 	}
-	parts := []string{err.Error()}
-	if code := s.ExitCode(); code != nil {
-		parts = append(parts, fmt.Sprintf("exit_code=%d", *code))
+	return s.attachEvidence(mcperr.New(stage, code, message))
+}
+
+// attachEvidence 把当前进程的退出码与输出尾部挂到错误上。
+func (s *Session) attachEvidence(err *mcperr.Error) *mcperr.Error {
+	// 进程刚退出时 waitProc 可能还没来得及更新 ProcessState，短暂等待退出通知以拿到退出码。
+	select {
+	case <-s.exitCh:
+	case <-time.After(200 * time.Millisecond):
 	}
-	if tail := strings.TrimSpace(string(Sanitize(s.StderrTail()))); tail != "" {
-		if len(tail) > 512 {
-			tail = tail[len(tail)-512:]
-		}
-		parts = append(parts, "stderr="+tail)
-	}
-	return fmt.Errorf("%s", strings.Join(parts, "; "))
+	return err.WithProcess(
+		s.ExitCode(),
+		string(Sanitize(s.StderrTail())),
+		string(Sanitize(s.StdoutNoiseTail())),
+	)
 }
 
 // ----------------------------------------------------------------
@@ -294,12 +311,12 @@ func (s *Session) handshake() error {
 
 	resp, err := s.Call(ctx, initReq)
 	if err != nil {
-		return fmt.Errorf("initialize: %w", err)
+		return s.handshakeError("initialize", err)
 	}
 
 	// 解析 server info
 	if len(resp.Error) > 0 && string(resp.Error) != "null" {
-		return fmt.Errorf("initialize rejected: %s", string(resp.Error))
+		return mcperr.New(mcperr.StageHandshake, CodeHandshakeRejected, "initialize rejected: "+string(resp.Error))
 	}
 	if len(resp.Result) > 0 {
 		s.initResult = append(json.RawMessage(nil), resp.Result...)
@@ -320,7 +337,31 @@ func (s *Session) handshake() error {
 		JSONRPC: json.RawMessage(`"2.0"`),
 		Method:  json.RawMessage(`"notifications/initialized"`),
 	}
-	return s.SendNotification(notif)
+	if err := s.SendNotification(notif); err != nil {
+		return s.handshakeError("initialized notify", err)
+	}
+	return nil
+}
+
+// handshakeError 把握手期间的底层错误归到握手阶段的稳定错误码：
+// 进程已退出 → exited_on_start（含证据）；超时 → handshake_timeout；其余 → handshake_rejected。
+func (s *Session) handshakeError(step string, err error) error {
+	if typed, ok := mcperr.As(err); ok && typed.ProcessExited() {
+		typed.Stage = mcperr.StageHandshake
+		typed.Code = CodeExitedOnStart
+		typed.Message = step + ": " + typed.Message
+		return typed
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return s.attachEvidence(mcperr.Wrap(mcperr.StageHandshake, CodeHandshakeTimeout,
+			fmt.Sprintf("%s: no response within %s", step, s.cfg.HandshakeTimeout), err))
+	}
+	if typed, ok := mcperr.As(err); ok {
+		typed.Stage = mcperr.StageHandshake
+		typed.Message = step + ": " + typed.Message
+		return typed
+	}
+	return s.attachEvidence(mcperr.Wrap(mcperr.StageHandshake, CodeHandshakeRejected, step+": "+err.Error(), err))
 }
 
 // waitSettled 要求握手后进程在窗口内持续存活（抓异步 startup exit）。
@@ -331,25 +372,30 @@ func (s *Session) waitSettled(window time.Duration) error {
 	deadline := time.Now().Add(window)
 	for {
 		if !s.Alive() {
-			return s.enrichDeadError(fmt.Errorf("subprocess exited shortly after MCP handshake"))
+			return s.attachEvidence(mcperr.New(mcperr.StageSettle, CodeExitedAfterHandshake,
+				"subprocess exited shortly after MCP handshake"))
 		}
 		if !time.Now().Before(deadline) {
-			if !s.Alive() {
-				return s.enrichDeadError(fmt.Errorf("subprocess exited shortly after MCP handshake"))
-			}
 			return nil
 		}
-		time.Sleep(100 * time.Millisecond)
+		select {
+		case <-s.exitCh:
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
 }
 
 // readLoop 持续从 stdout 读取消息，按类型分发。
+// stdout 上的非 JSON-RPC 行记入 stdoutNoise 后继续读取，而不是终止循环——
+// 否则服务端一条误打到 stdout 的日志会让所有请求表现为超时，真实原因丢失。
 func (s *Session) readLoop() {
 	for {
 		msg, err := s.reader.Read()
 		if err != nil {
-			if err == io.EOF || s.closed.Load() {
-				return
+			var nonJSON *NonJSONLineError
+			if errors.As(err, &nonJSON) {
+				_, _ = s.stdoutNoise.Write(append(nonJSON.Line, '\n'))
+				continue
 			}
 			return
 		}

@@ -111,10 +111,23 @@ func (r *Reader) Read() (*Message, error) {
 	}
 	msg := &Message{}
 	if err := json.Unmarshal(line, msg); err != nil {
-		return nil, fmt.Errorf("decode jsonrpc line: %w", err)
+		return nil, &NonJSONLineError{Line: append([]byte(nil), line...), Err: err}
 	}
 	return msg, nil
 }
+
+// NonJSONLineError 表示 stdout 上出现了不是 JSON-RPC 的一行（常见于服务端把日志打到 stdout）。
+// 调用方可记录该行并继续读取，而不是把它当作管道损坏。
+type NonJSONLineError struct {
+	Line []byte
+	Err  error
+}
+
+func (e *NonJSONLineError) Error() string {
+	return fmt.Sprintf("decode jsonrpc line: %v", e.Err)
+}
+
+func (e *NonJSONLineError) Unwrap() error { return e.Err }
 
 // ----------------------------------------------------------------
 // PendingMap：按 id 分发响应到对应的等待者

@@ -3,8 +3,8 @@ package discover
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
+	"github.com/orbitproxy/orbitproxy-go/internal/mcp/mcperr"
 	"github.com/orbitproxy/orbitproxy-go/internal/mcp/mcpstdio"
 )
 
@@ -17,9 +17,12 @@ type StdioTransport struct {
 // NewStdioTransport 创建一个临时的 stdio 传输层。
 // 启动子进程并完成 MCP 握手。调用方必须在使用完毕后 Close。
 // onDiag 可选：Session 握手失败/异常退出时回调。
+//
+// 这是诊断性会话（预检 / 发现）的唯一入口，因此在此合并 SpawnConfig.PreflightEnv；
+// 运行时 Pool 创建的会话不会注入这些变量。
 func NewStdioTransport(cfg mcpstdio.SpawnConfig, endpointID, machineDir string, onDiag mcpstdio.DiagnosticCallback) (*StdioTransport, error) {
 	sessionCfg := mcpstdio.SessionConfig{
-		SpawnConfig:  cfg,
+		SpawnConfig:  mcpstdio.WithPreflightEnv(cfg),
 		EndpointID:   endpointID,
 		MachineDir:   machineDir,
 		DiagCallback: onDiag,
@@ -27,7 +30,7 @@ func NewStdioTransport(cfg mcpstdio.SpawnConfig, endpointID, machineDir string, 
 
 	session, err := mcpstdio.NewSession(sessionCfg)
 	if err != nil {
-		return nil, fmt.Errorf("stdio transport: %w", err)
+		return nil, err
 	}
 	return &StdioTransport{session: session}, nil
 }
@@ -36,7 +39,7 @@ func NewStdioTransport(cfg mcpstdio.SpawnConfig, endpointID, machineDir string, 
 func (t *StdioTransport) Send(ctx context.Context, request json.RawMessage) (json.RawMessage, error) {
 	msg := &mcpstdio.Message{}
 	if err := json.Unmarshal(request, msg); err != nil {
-		return nil, fmt.Errorf("decode message: %w", err)
+		return nil, mcperr.Wrap(mcperr.StageProtocol, mcperr.CodeInternal, "encode request: "+err.Error(), err)
 	}
 
 	// 通知类消息（无 id）——发完即走
@@ -55,9 +58,14 @@ func (t *StdioTransport) Send(ctx context.Context, request json.RawMessage) (jso
 
 	respBytes, err := json.Marshal(resp)
 	if err != nil {
-		return nil, fmt.Errorf("marshal response: %w", err)
+		return nil, mcperr.Wrap(mcperr.StageProtocol, mcperr.CodeInternal, "marshal response: "+err.Error(), err)
 	}
 	return json.RawMessage(respBytes), nil
+}
+
+// ServerInfo 实现 Handshaked：会话创建时已完成 initialize。
+func (t *StdioTransport) ServerInfo() (name, version string) {
+	return t.session.ServerInfo()
 }
 
 // Close 关闭临时会话，终止子进程。

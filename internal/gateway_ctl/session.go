@@ -1,11 +1,16 @@
 package gateway_ctl
 
 import (
+	"context"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/hashicorp/yamux"
 )
+
+// DialEdge opens one TCP+TLS+yamux client session to edge.
+type DialEdge func(ctx context.Context) (net.Conn, *yamux.Session, error)
 
 // ConnConfig holds dial/auth parameters for one edge session.
 type ConnConfig struct {
@@ -23,6 +28,12 @@ type SessionContext struct {
 	ControlStream net.Conn
 	EdgeID        string
 	SessionID     string
+	// DataSessions 来自 ServerHello。0 或字段缺失时不拨数据会话。
+	DataSessions int
+	// DialEdge 拨一条数据会话。为 nil 时不拨。
+	DialEdge DialEdge
+	// RedialInterval 缩短测试里的重拨等待。0 用默认 backoff。
+	RedialInterval time.Duration
 }
 
 // Close tears down the control stream and yamux session.

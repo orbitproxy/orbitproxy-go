@@ -1,7 +1,6 @@
 package mcpstdio
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -9,17 +8,34 @@ import (
 	"sync"
 	"time"
 
+	"github.com/orbitproxy/orbitproxy-go/internal/mcp/mcperr"
 	"github.com/orbitproxy/orbitproxy-go/internal/userenv"
 )
 
 // SpawnConfig 描述一个待启动的 stdio MCP server 进程。
+//
+// FamilyKey / RequiresEnvFile / PreflightEnv 均来自控制面下发的 catalog 元数据，
+// 客户端不对任何具体 connector 做特判。
 type SpawnConfig struct {
 	Command        string   // 命令名或绝对路径，不经 shell
 	Args           []string // argv 参数列表
 	WorkDir        string   // 子进程工作目录，空则继承父进程
 	Env            []string // 显式设置的环境变量（KEY=VALUE 格式）
 	EnvPassthrough []string // 从父进程环境透传的变量名白名单
-	FamilyKey      string   // 官方 connector family，用于 spawn 前判定是否必须有 env 文件
+	FamilyKey      string   // 官方 connector family 标识，仅作透传与展示
+	// RequiresEnvFile 为 true 时，启动前必须存在 <machineDir>/env/<endpointID>.env 且含至少一对 KEY=VAL。
+	RequiresEnvFile bool
+	// PreflightEnv 仅在预检 / 发现这类诊断性会话注入子进程（如打开服务端日志开关），运行时会话忽略。
+	PreflightEnv []string
+}
+
+// WithPreflightEnv 返回合并了 PreflightEnv 的配置副本，供诊断性会话使用。
+func WithPreflightEnv(cfg SpawnConfig) SpawnConfig {
+	if len(cfg.PreflightEnv) == 0 {
+		return cfg
+	}
+	cfg.Env = mergeEnvPairs(cfg.Env, cfg.PreflightEnv)
+	return cfg
 }
 
 // Process 是一个已启动的子进程，持有三个管道句柄。
@@ -75,12 +91,12 @@ func (p *Process) ExitCode() *int {
 //   - 环境变量只按 EnvPassthrough 白名单从父进程透传，不继承全部环境
 func Spawn(cfg SpawnConfig) (*Process, error) {
 	if cfg.Command == "" {
-		return nil, fmt.Errorf("command is required")
+		return nil, mcperr.New(mcperr.StageCommand, mcperr.CodeCommandNotFound, "command is required")
 	}
 
 	resolved, err := userenv.LookPath(cfg.Command)
 	if err != nil {
-		return nil, fmt.Errorf("start: %w", err)
+		return nil, mcperr.Wrap(mcperr.StageCommand, mcperr.CodeCommandNotFound, "command not found in PATH: "+cfg.Command, err)
 	}
 	cmd := exec.Command(resolved, cfg.Args...)
 
@@ -99,19 +115,19 @@ func Spawn(cfg SpawnConfig) (*Process, error) {
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return nil, fmt.Errorf("stdin pipe: %w", err)
+		return nil, mcperr.Wrap(mcperr.StageSpawn, mcperr.CodeSpawnFailed, "stdin pipe: "+err.Error(), err)
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, fmt.Errorf("stdout pipe: %w", err)
+		return nil, mcperr.Wrap(mcperr.StageSpawn, mcperr.CodeSpawnFailed, "stdout pipe: "+err.Error(), err)
 	}
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		return nil, fmt.Errorf("stderr pipe: %w", err)
+		return nil, mcperr.Wrap(mcperr.StageSpawn, mcperr.CodeSpawnFailed, "stderr pipe: "+err.Error(), err)
 	}
 
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("start: %w", err)
+		return nil, mcperr.Wrap(mcperr.StageSpawn, mcperr.CodeSpawnFailed, "start "+resolved+": "+err.Error(), err)
 	}
 
 	return &Process{

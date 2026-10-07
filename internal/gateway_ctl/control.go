@@ -67,7 +67,10 @@ func (ctl *Control) worker() {
 	})
 	ctl.initExecBridge()
 	ctl.registerMsgHandlers()
-	go ctl.acceptWorkStreams(ctl.ctx)
+	go ctl.acceptWorkStreams(ctl.ctx, ctl.sessionCtx.Yamux)
+	dataCtx, cancelData := context.WithCancel(ctl.ctx)
+	defer cancelData()
+	ctl.startDataSessionRunners(dataCtx)
 	go ctl.msgDispatcher.Run()
 
 	<-ctl.msgDispatcher.Done()

@@ -16,10 +16,9 @@ func New() *yamux.Config {
 	// Default 10s is too tight on proxy/TUN paths and caused session death
 	// ("keepalive failed: i/o deadline reached") under brief stalls.
 	cfg.ConnectionWriteTimeout = 30 * time.Second
-	// Sliding receive window ceiling (not a total transfer cap). Larger values
-	// reduce WindowUpdate chatter on fat pipes; streaming still works past this
-	// as the peer reads and grants more window.
-	cfg.MaxStreamWindowSize = 6 * 1024 * 1024
+	// Sliding receive window ceiling (not a total transfer cap). Matches edge at 4MB.
+	// yamux allocates recvBuf lazily per arrived frame, not up front to this size.
+	cfg.MaxStreamWindowSize = 4 * 1024 * 1024
 	// Join teardown can leave late WindowUpdates; those library WARNs are benign.
 	cfg.LogOutput = io.Discard
 	return cfg

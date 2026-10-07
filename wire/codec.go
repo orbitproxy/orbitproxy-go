@@ -58,6 +58,8 @@ func (m *MsgTransportMapper) registerAll() {
 	m.registerMsg(TypeRestart, Restart{})
 	m.registerMsg(TypeUpdate, Update{})
 	m.registerMsg(TypeLifecycleResult, LifecycleResult{})
+	m.registerMsg(TypeDataHello, DataHello{})
+	m.registerMsg(TypeDataHelloAck, DataHelloAck{})
 }
 
 func (m *MsgTransportMapper) registerMsg(typeByte byte, prototype Message) {

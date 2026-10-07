@@ -13,8 +13,9 @@ func (ClientHello) MsgType() MessageType { return MessageTypeClientHello }
 
 // ServerHello acknowledges a successful ClientHello.
 type ServerHello struct {
-	EdgeID    string `json:"edge_id"`
-	SessionID string `json:"session_id"`
+	EdgeID       string `json:"edge_id"`
+	SessionID    string `json:"session_id"`
+	DataSessions int    `json:"data_sessions"`
 }
 
 func (ServerHello) MsgType() MessageType { return MessageTypeServerHello }

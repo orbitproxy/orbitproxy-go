@@ -3,11 +3,10 @@ package preflight
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"strings"
 	"time"
 
 	"github.com/orbitproxy/orbitproxy-go/internal/mcp/discover"
+	"github.com/orbitproxy/orbitproxy-go/internal/mcp/mcperr"
 	"github.com/orbitproxy/orbitproxy-go/internal/mcp/mcpstdio"
 )
 
@@ -27,94 +26,42 @@ type RunOptions struct {
 	EndpointID     string
 	MachineDir     string
 	OnDiag         mcpstdio.DiagnosticCallback
-	// SkipProtocol 官方路径：只跑本地环境层（CheckCommand + 包是否已安装），不 tools/list。
+	// SkipProtocol 只跑本地环境层（CheckCommand + 包是否已安装 + 运行前提），不拉进程、不 tools/list。
+	// 由调用方显式指定；预检不按 connector 家族推导。
 	SkipProtocol bool
 }
 
-// FamilyKeyFromPayload reads family_key from endpoint local_service_payload.
-func FamilyKeyFromPayload(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var payload struct {
-		FamilyKey string `json:"family_key"`
-	}
-	if json.Unmarshal(raw, &payload) != nil {
-		return ""
-	}
-	return payload.FamilyKey
-}
-
 // Run executes create/sync preflight.
-// Official (SkipProtocol or family_key): CheckCommand + package presence only.
-// Custom: CheckCommand (exec) + tools/list following nextCursor until end or limit.
+//
+// exec 型：CheckCommand → 运行前提（环境文件）→ spawn + 握手 + 存活窗 → tools/list（跟随 nextCursor）。
+// forward 型：HTTP 连接 → 握手 → tools/list。
+// 每一阶段失败都返回 *mcperr.Error，调用方用 ClassifyError 取稳定错误码。
 func Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 	if len(opts.Payload) == 0 {
-		return nil, fmt.Errorf("endpoint payload is empty")
+		return nil, mcperr.New(mcperr.StageCommand, mcperr.CodeInternal, "endpoint payload is empty")
 	}
 	timeout := time.Duration(opts.TimeoutSeconds) * time.Second
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
-	if deadline, ok := ctx.Deadline(); !ok {
+	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
-	} else {
-		_ = deadline
 	}
-
-	familyKey := FamilyKeyFromPayload(opts.Payload)
-	skipProtocol := opts.SkipProtocol || familyKey != ""
 
 	execCfg, err := mcpstdio.ParseExecPayload(opts.Payload)
 	if err == nil && execCfg != nil {
-		cmd := CheckCommand(CommandConfig{
-			Command: execCfg.Command,
-			Args:    execCfg.Args,
-			WorkDir: execCfg.WorkDir,
-		})
-		if cmd == nil || !cmd.OK {
-			if cmd == nil {
-				return nil, fmt.Errorf("preflight: command check returned nil")
-			}
-			return nil, fmt.Errorf("preflight: %s: %s", cmd.ErrorCode, cmd.ErrorMessage)
-		}
-
-		if mcpstdio.RequiresEndpointEnvFile(familyKey, execCfg.Args) && !mcpstdio.EndpointEnvFileReady(opts.MachineDir, opts.EndpointID) {
-			return nil, mcpstdio.EnvFileMissingError(opts.MachineDir, opts.EndpointID)
-		}
-
-		if skipProtocol {
-			return &RunResult{ResolvedPath: cmd.ResolvedPath}, nil
-		}
-
-		transport, err := discover.NewStdioTransport(*execCfg, opts.EndpointID, opts.MachineDir, opts.OnDiag)
-		if err != nil {
-			return nil, err
-		}
-		defer transport.Close()
-
-		listed, err := discover.ListToolsViaTransport(ctx, transport)
-		if err != nil {
-			return nil, err
-		}
-		return &RunResult{
-			Tools:         listed.Tools,
-			Truncated:     listed.Truncated,
-			ServerName:    listed.ServerName,
-			ServerVersion: listed.ServerVersion,
-			ResolvedPath:  cmd.ResolvedPath,
-		}, nil
+		return runExec(ctx, opts, *execCfg)
 	}
 
-	if skipProtocol {
+	if opts.SkipProtocol {
 		return &RunResult{}, nil
 	}
 
-	localAddr, localPath, transportName, err := discover.ParseLocalPayload(opts.Payload)
+	localAddr, localPath, _, err := discover.ParseLocalPayload(opts.Payload)
 	if err != nil {
-		return nil, err
+		return nil, mcperr.Wrap(mcperr.StageDial, mcperr.CodeInternal, "", err)
 	}
 	httpTransport := discover.NewHTTPTransport(
 		localAddr,
@@ -123,7 +70,6 @@ func Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 		discover.IsPlaywrightPayload(opts.Payload),
 	)
 	defer httpTransport.Close()
-	_ = transportName
 
 	listed, err := discover.ListToolsViaTransport(ctx, httpTransport)
 	if err != nil {
@@ -137,29 +83,48 @@ func Run(ctx context.Context, opts RunOptions) (*RunResult, error) {
 	}, nil
 }
 
+func runExec(ctx context.Context, opts RunOptions, execCfg mcpstdio.SpawnConfig) (*RunResult, error) {
+	cmd := CheckCommand(CommandConfig{
+		Command: execCfg.Command,
+		Args:    execCfg.Args,
+		WorkDir: execCfg.WorkDir,
+	})
+	if cmd == nil {
+		return nil, mcperr.New(mcperr.StageCommand, mcperr.CodeInternal, "command check returned nil")
+	}
+	if !cmd.OK {
+		return nil, cmd.Err()
+	}
+
+	if execCfg.RequiresEnvFile && !mcpstdio.EndpointEnvFileReady(opts.MachineDir, opts.EndpointID) {
+		return nil, mcpstdio.EnvFileMissingError(opts.MachineDir, opts.EndpointID)
+	}
+
+	if opts.SkipProtocol {
+		return &RunResult{ResolvedPath: cmd.ResolvedPath}, nil
+	}
+
+	transport, err := discover.NewStdioTransport(execCfg, opts.EndpointID, opts.MachineDir, opts.OnDiag)
+	if err != nil {
+		return nil, err
+	}
+	defer transport.Close()
+
+	listed, err := discover.ListToolsViaTransport(ctx, transport)
+	if err != nil {
+		return nil, err
+	}
+	return &RunResult{
+		Tools:         listed.Tools,
+		Truncated:     listed.Truncated,
+		ServerName:    listed.ServerName,
+		ServerVersion: listed.ServerVersion,
+		ResolvedPath:  cmd.ResolvedPath,
+	}, nil
+}
+
 // ClassifyError maps a preflight error to a stable error code for wire/CP.
+// 委托 mcperr.Classify：按类型取码，不做文本匹配。
 func ClassifyError(err error) (code, message string) {
-	if err == nil {
-		return "internal", "unknown error"
-	}
-	message = err.Error()
-	lower := strings.ToLower(message)
-	switch {
-	case strings.Contains(lower, CodeEnvFileMissing), strings.Contains(lower, "environment variable file not found"):
-		return CodeEnvFileMissing, message
-	case strings.Contains(lower, "package_not_installed"), strings.Contains(lower, "not installed locally"):
-		return CodePackageNotInstalled, message
-	case strings.Contains(lower, "command_not_found"), strings.Contains(lower, "command not found"), strings.Contains(lower, "command is empty"):
-		return CodeCommandNotFound, message
-	case strings.Contains(lower, "command_not_executable"), strings.Contains(lower, "not executable"):
-		return CodeCommandNotExecutable, message
-	case strings.Contains(lower, "dial failed"), strings.Contains(lower, "connection refused"):
-		return "dial_failed", message
-	case strings.Contains(lower, "timeout"), strings.Contains(lower, "deadline"):
-		return "timeout", message
-	case strings.Contains(lower, "http "), strings.Contains(lower, "tools/list"), strings.Contains(lower, "decode"):
-		return "protocol_error", message
-	default:
-		return "internal", message
-	}
+	return mcperr.Classify(err)
 }

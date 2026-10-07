@@ -2,6 +2,10 @@
 
 Go SDK for OrbitProxy. An **SDK client** is a virtual `machine`.
 
+Website: https://orbitproxy.cc
+
+Docs: https://docs.orbitproxy.cc
+
 ```text
 orbitproxy (public)     → Register / Start / Connect / Identity
 service/ (public)       → Service (reconnect, login, endpoints, Listen)
