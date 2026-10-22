@@ -85,9 +85,8 @@ func (client *MachineClient) ListPolicies(ctx context.Context, proxyID string) (
 	return client.do(ctx, http.MethodGet, "/v1/machine-api/tunnels/"+url.PathEscape(proxyID)+"/policies", nil)
 }
 
-func (client *MachineClient) DeletePolicy(ctx context.Context, proxyID, policyType, ruleGroupID string) error {
-	_, err := client.do(ctx, http.MethodDelete, "/v1/machine-api/tunnels/"+url.PathEscape(proxyID)+"/policies/"+url.PathEscape(policyType)+"/"+url.PathEscape(ruleGroupID), nil)
-	return err
+func (client *MachineClient) DeletePolicy(ctx context.Context, proxyID, policyType, ruleGroupID string) (json.RawMessage, error) {
+	return client.do(ctx, http.MethodDelete, "/v1/machine-api/tunnels/"+url.PathEscape(proxyID)+"/policies/"+url.PathEscape(policyType)+"/"+url.PathEscape(ruleGroupID), nil)
 }
 
 func (client *MachineClient) SetMaintenance(ctx context.Context, proxyID string, enabled bool) (json.RawMessage, error) {
