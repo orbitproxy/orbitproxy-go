@@ -4,7 +4,7 @@ The official Go SDK for [orbitproxy](https://orbitproxy.cc) — 面向开发者/
 
 - Website: [orbitproxy.cc](https://orbitproxy.cc)
 - Docs: [docs.orbitproxy.cc](https://docs.orbitproxy.cc/docs)
-- SDK guide: [docs.orbitproxy.cc/docs/integrate/sdk](https://docs.orbitproxy.cc/docs/integrate/sdk)
+- SDK guide: [docs.orbitproxy.cc/docs/client/overview](https://docs.orbitproxy.cc/docs/client/overview)
 
 ```text
 orbitproxy (public)     → Register / Start / Connect / Identity
@@ -86,4 +86,4 @@ go test ./...
 - [orbitproxy 官网](https://orbitproxy.cc)
 - [orbitproxy 文档](https://docs.orbitproxy.cc/docs)
 - [快速开始](https://docs.orbitproxy.cc/docs/start/quickstart)
-- [API 网关](https://docs.orbitproxy.cc/docs/gateway/api) · [Webhook 网关](https://docs.orbitproxy.cc/docs/gateway/webhook) · [MCP 网关](https://docs.orbitproxy.cc/docs/gateway/mcp)
+- [API 网关](https://docs.orbitproxy.cc/docs/gateway/overview) · [Webhook 网关](https://docs.orbitproxy.cc/docs/gateway/webhook) · [MCP 网关](https://docs.orbitproxy.cc/docs/mcp-gateway/overview)
