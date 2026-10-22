@@ -1,6 +1,6 @@
 # orbitproxy-go
 
-The official Go SDK for [orbitproxy](https://orbitproxy.cc) — 面向开发者/企业的多模态网关设施。在 Go 服务里一行接入 orbitproxy 的 API 网关、Webhook 网关与 MCP 网关。An **SDK client** is a virtual `machine`.
+The official Go SDK for [orbitproxy](https://orbitproxy.cc) — 面向开发者/企业的多模态网关设施。在 Go 服务里一行接入 orbitproxy 的 API 网关与 MCP 网关。An **SDK client** is a virtual `machine`.
 
 - Website: [orbitproxy.cc](https://orbitproxy.cc)
 - Docs: [docs.orbitproxy.cc](https://docs.orbitproxy.cc/docs)
