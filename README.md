@@ -86,4 +86,4 @@ go test ./...
 - [orbitproxy 官网](https://orbitproxy.cc)
 - [orbitproxy 文档](https://docs.orbitproxy.cc/docs)
 - [快速开始](https://docs.orbitproxy.cc/docs/start/quickstart)
-- [API 网关](https://docs.orbitproxy.cc/docs/gateway/overview) · [Webhook 网关](https://docs.orbitproxy.cc/docs/gateway/webhook) · [MCP 网关](https://docs.orbitproxy.cc/docs/mcp-gateway/overview)
+- [API 网关](https://docs.orbitproxy.cc/docs/gateway/overview) · [MCP 网关](https://docs.orbitproxy.cc/docs/mcp-gateway/overview)
